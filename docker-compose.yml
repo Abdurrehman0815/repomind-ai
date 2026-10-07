@@ -1,0 +1,89 @@
+services:
+  # ─────────────────────────────────────────────────────────────
+  # PostgreSQL + pgvector
+  # ─────────────────────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: repomind-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-repomind}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-repomind_password}
+      POSTGRES_DB: ${POSTGRES_DB:-repomind}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-repomind} -d ${POSTGRES_DB:-repomind}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - repomind-net
+
+  # ─────────────────────────────────────────────────────────────
+  # FastAPI Backend
+  # ─────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: repomind-backend
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-repomind}:${POSTGRES_PASSWORD:-repomind_password}@postgres:5432/${POSTGRES_DB:-repomind}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DEBUG=${DEBUG:-false}
+      - SECRET_KEY=${SECRET_KEY:-dev_secret_key_change_in_production}
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-local}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+      - EMBEDDING_DIMENSIONS=${EMBEDDING_DIMENSIONS:-768}
+      - WORKSPACE_ROOT=${WORKSPACE_ROOT:-/data/workspaces}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - workspace_data:/data/workspaces
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - repomind-net
+
+  # ─────────────────────────────────────────────────────────────
+  # React/Vite Frontend
+  # ─────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: repomind-frontend
+    environment:
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:8000}
+      - VITE_APP_NAME=${VITE_APP_NAME:-RepoMind AI}
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - repomind-net
+
+volumes:
+  postgres_data:
+  workspace_data:
+
+networks:
+  repomind-net:
+    driver: bridge

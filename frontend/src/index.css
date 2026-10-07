@@ -1,0 +1,115 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 47% 6%;
+    --foreground: 213 31% 91%;
+
+    --card: 222 47% 9%;
+    --card-foreground: 213 31% 91%;
+
+    --popover: 222 47% 9%;
+    --popover-foreground: 213 31% 91%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 6%;
+
+    --secondary: 222 47% 14%;
+    --secondary-foreground: 213 31% 91%;
+
+    --muted: 222 47% 12%;
+    --muted-foreground: 215 20% 55%;
+
+    --accent: 264 90% 66%;
+    --accent-foreground: 222 47% 6%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 213 31% 91%;
+
+    --border: 222 47% 16%;
+    --input: 222 47% 14%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-background;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground;
+  }
+
+  /* Code blocks */
+  pre, code {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, hsl(217, 91%, 65%), hsl(264, 90%, 70%));
+  }
+
+  .glass {
+    @apply bg-card/80 backdrop-blur-sm border border-border/50;
+  }
+
+  .glow-primary {
+    box-shadow: 0 0 20px hsl(217, 91%, 60%, 0.15);
+  }
+
+  /* Citation highlight animation */
+  @keyframes citation-flash {
+    0%, 100% { background-color: transparent; }
+    50% { background-color: hsl(217, 91%, 60%, 0.2); }
+  }
+
+  .citation-highlight {
+    animation: citation-flash 1s ease-in-out 2;
+  }
+
+  /* Typing animation for streaming responses */
+  @keyframes cursor-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  .cursor-blink::after {
+    content: '▋';
+    @apply text-primary;
+    animation: cursor-blink 1s step-end infinite;
+  }
+
+  /* Agent trace step animation */
+  @keyframes step-slide-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .step-animate {
+    animation: step-slide-in 0.2s ease-out;
+  }
+}
