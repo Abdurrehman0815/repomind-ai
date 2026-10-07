@@ -7,8 +7,8 @@
 | 0 | Analysis and Project Contract | ✅ COMPLETE | 2026-10-07 |
 | 1 | Monorepo / Application Skeleton | ✅ COMPLETE | 2026-10-07 |
 | 2 | Database and Migrations | ✅ COMPLETE | 2026-10-07 |
-| 3 | Repository Import | 🔄 NEXT | 2026-10-07 |
-| 4 | Code Parsing and Symbol Extraction | ⏳ PENDING | — |
+| 3 | Repository Import | ✅ COMPLETE | 2026-10-07 |
+| 4 | Code Parsing and Symbol Extraction | 🔄 NEXT | 2026-10-07 |
 | 5 | Code Chunking | ⏳ PENDING | — |
 | 6 | Local Embedding Pipeline | ⏳ PENDING | — |
 | 7 | Vector Search | ⏳ PENDING | — |
@@ -57,12 +57,6 @@
 - [x] .env.example
 - [x] Directory skeleton created
 - [x] Git repository initialized
-
-### Tests Passed
-- [x] docs/ directory contains all required files
-- [x] README.md exists and is non-empty
-- [x] Git repository is initialized
-- [x] .gitignore excludes secrets, node_modules, venv, model caches
 
 ### Acceptance Status
 ✅ PHASE 0 ACCEPTED
@@ -128,6 +122,40 @@
 
 ---
 
+## Phase 3 — Repository Import
+
+**Status:** ✅ COMPLETE  
+**Date:** 2026-10-07
+
+### Implemented
+- [x] `scanner.py` with multi-language identification (Python, TypeScript, Go, Rust, Java, C++, SQL, Dockerfile, etc.)
+- [x] Binary file filtering (.png, .zip, .exe, fonts, lockfiles, etc.)
+- [x] `.gitignore` and `.ignore` pattern compiler using `pathspec` gitwildmatch
+- [x] Security protections against directory traversal, symlink escapes, and root file access
+- [x] Maximum file size guardrail (`max_file_size_bytes`) to prevent memory DoS
+- [x] Cryptographic SHA-256 file hashing for incremental change tracking
+- [x] Line counting and byte-size measurement
+- [x] `IngestionService` coordinating incremental additions, modifications, deletions, and unchanged files
+- [x] Projects REST API: `POST /api/v1/projects` (register & scan), `GET /api/v1/projects` (list with file/byte counts), `GET /api/v1/projects/{id}`, `POST /api/v1/projects/{id}/scan` (incremental re-scan), `GET /api/v1/projects/{id}/files` (file document catalog), `DELETE /api/v1/projects/{id}`
+- [x] Frontend interactive import modal in `ProjectsPage.tsx` with live re-scan, delete, and file metrics
+- [x] Frontend API client service updated (`services/api.ts`)
+
+### Tests Passed (15/15 Phase 3, 57/57 Cumulative)
+- [x] Language detection across languages, extensions, and explicit filenames
+- [x] Binary file exclusion
+- [x] SHA-256 hash calculation and line counter
+- [x] `.gitignore` traversal and directory pruning
+- [x] Max file size boundary enforcement
+- [x] Path traversal and forbidden root validation (`C:\`, `/`)
+- [x] Incremental sync lifecycle (added, modified, unchanged, deleted)
+- [x] Projects REST API lifecycle (create, get, list files, scan, delete, 404 verification)
+- [x] Frontend production bundle compiles cleanly with `npm run build`
+
+### Acceptance Status
+✅ PHASE 3 ACCEPTED
+
+---
+
 ## Final Acceptance Criteria
 
 ```
@@ -135,8 +163,8 @@
 [x] PostgreSQL schema designed with pgvector
 [x] pgvector Vector(768) configured
 [ ] Ollama works
-[ ] Repository import works
-[ ] Incremental indexing works
+[x] Repository import works
+[x] Incremental indexing works
 [ ] Code parsing works
 [ ] Symbol extraction works
 [ ] Dependency graph works
