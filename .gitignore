@@ -1,0 +1,137 @@
+# ─────────────────────────────────────────────────────────────
+# Secrets and credentials — NEVER commit these
+# ─────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+credentials
+credentials.*
+secrets
+secrets.*
+*.secret
+.netrc
+.npmrc
+.pypirc
+service-account*.json
+google-credentials.json
+aws-credentials*
+
+# ─────────────────────────────────────────────────────────────
+# Python
+# ─────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+pip-wheel-metadata/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+*.pyo
+*.pyc
+
+# ─────────────────────────────────────────────────────────────
+# Node / Frontend
+# ─────────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.npm
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.pnp.*
+
+# ─────────────────────────────────────────────────────────────
+# Database
+# ─────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+pgdata/
+docker-volumes/
+
+# ─────────────────────────────────────────────────────────────
+# AI / ML model caches
+# ─────────────────────────────────────────────────────────────
+.ollama/
+models/
+*.gguf
+*.bin
+*.safetensors
+sentence_transformers/
+huggingface/
+
+# ─────────────────────────────────────────────────────────────
+# IDEs and editors
+# ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ─────────────────────────────────────────────────────────────
+# Docker
+# ─────────────────────────────────────────────────────────────
+docker-volumes/
+
+# ─────────────────────────────────────────────────────────────
+# Logs
+# ─────────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ─────────────────────────────────────────────────────────────
+# Test artifacts
+# ─────────────────────────────────────────────────────────────
+.pytest_cache/
+coverage.xml
+test-results/
+
+# ─────────────────────────────────────────────────────────────
+# Evaluation reports (generated)
+# ─────────────────────────────────────────────────────────────
+evals/reports/*.json
+evals/reports/*.html
+
+# ─────────────────────────────────────────────────────────────
+# OS
+# ─────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
