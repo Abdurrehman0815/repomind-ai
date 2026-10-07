@@ -51,3 +51,33 @@ export interface ScanSummary {
   total_size_bytes: number
   total_lines: number
 }
+
+export interface CodeSymbol {
+  id: string
+  project_id: string
+  file_id: string
+  name: string
+  kind: string
+  line_start: number
+  line_end: number
+  signature?: string | null
+  docstring?: string | null
+  parent_symbol_id?: string | null
+  created_at: string
+}
+
+export interface SymbolListResponse {
+  symbols: CodeSymbol[]
+  total: number
+}
+
+export interface SymbolParseResponse {
+  project_id: string
+  status: string
+  stats: {
+    files_processed: number
+    total_symbols: number
+    symbols_by_kind: Record<string, number>
+    files_with_errors: number
+  }
+}

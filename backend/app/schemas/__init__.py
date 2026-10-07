@@ -9,6 +9,11 @@ from app.schemas.project import (
     FileDocumentResponse,
     FileListResponse,
 )
+from app.schemas.symbol import (
+    CodeSymbolResponse,
+    SymbolListResponse,
+    SymbolParseResponse,
+)
 
 __all__ = [
     "ProjectCreateRequest",
@@ -17,4 +22,7 @@ __all__ = [
     "ProjectScanResponse",
     "FileDocumentResponse",
     "FileListResponse",
+    "CodeSymbolResponse",
+    "SymbolListResponse",
+    "SymbolParseResponse",
 ]

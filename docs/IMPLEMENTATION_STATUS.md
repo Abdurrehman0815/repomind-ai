@@ -8,8 +8,8 @@
 | 1 | Monorepo / Application Skeleton | ✅ COMPLETE | 2026-10-07 |
 | 2 | Database and Migrations | ✅ COMPLETE | 2026-10-07 |
 | 3 | Repository Import | ✅ COMPLETE | 2026-10-07 |
-| 4 | Code Parsing and Symbol Extraction | 🔄 NEXT | 2026-10-07 |
-| 5 | Code Chunking | ⏳ PENDING | — |
+| 4 | Code Parsing and Symbol Extraction | ✅ COMPLETE | 2026-10-07 |
+| 5 | Code Chunking | 🔄 NEXT | 2026-10-07 |
 | 6 | Local Embedding Pipeline | ⏳ PENDING | — |
 | 7 | Vector Search | ⏳ PENDING | — |
 | 8 | Hybrid Retrieval | ⏳ PENDING | — |
@@ -156,6 +156,34 @@
 
 ---
 
+## Phase 4 — Code Parsing and Symbol Extraction
+
+**Status:** ✅ COMPLETE  
+**Date:** 2026-10-07
+
+### Implemented
+- [x] `BaseCodeParser` abstract interface, `ExtractedSymbol`, `ExtractedDependency`, and `ParseResult` models
+- [x] `PythonCodeParser` using native `ast` with full function signature reconstruction (args, types, defaults, returns), class definitions, methods, docstrings, imports, and resilient regex fallback for syntax errors
+- [x] `TypeScriptJavaScriptParser` extracting classes, methods, functions, arrow components, interfaces, types, enums, JSDoc comments, and ES/CommonJS imports
+- [x] `GenericMultiLanguageParser` supporting Go, Rust, Java, C++, and SQL schemas
+- [x] `SymbolExtractor` service coordinating multi-file AST parsing and persisting symbols to `code_symbols` table
+- [x] Hierarchical parent-child linking (`parent_symbol_id` linking class methods to their parent class)
+- [x] REST API endpoints: `POST /api/v1/projects/{id}/parse`, `GET /api/v1/projects/{id}/symbols` (with name/kind/file_id filters), and `GET /api/v1/projects/{id}/symbols/{symbol_id}`
+- [x] Frontend types (`CodeSymbol`, `SymbolParseResponse`) and client service functions in `services/api.ts`
+
+### Tests Passed (6/6 Phase 4, 63/63 Cumulative)
+- [x] Python AST parser: functions, classes, async methods, docstrings, signatures, and imports
+- [x] Python syntax error graceful degradation to partial parsing
+- [x] TypeScript & JavaScript parser: interfaces, types, enums, classes, arrow functions, JSDoc
+- [x] Generic parser: Go and Rust constructs
+- [x] SymbolExtractor service lifecycle and database persistence with parent-child linkage
+- [x] Symbols REST API endpoints: parse trigger, list, filter by name/kind, single symbol lookup
+
+### Acceptance Status
+✅ PHASE 4 ACCEPTED
+
+---
+
 ## Final Acceptance Criteria
 
 ```
@@ -165,8 +193,8 @@
 [ ] Ollama works
 [x] Repository import works
 [x] Incremental indexing works
-[ ] Code parsing works
-[ ] Symbol extraction works
+[x] Code parsing works
+[x] Symbol extraction works
 [ ] Dependency graph works
 [ ] Embeddings work
 [ ] Vector retrieval works

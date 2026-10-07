@@ -5,6 +5,9 @@ import type {
   ProjectListResponse,
   FileDocument,
   ScanSummary,
+  CodeSymbol,
+  SymbolListResponse,
+  SymbolParseResponse,
 } from '@/types'
 
 const api = axios.create({
@@ -64,6 +67,36 @@ export const fetchProjectFiles = async (
     `/api/v1/projects/${projectId}/files`
   )
   return response.data.files
+}
+
+export const parseProjectSymbols = async (
+  projectId: string
+): Promise<SymbolParseResponse> => {
+  const response = await api.post<SymbolParseResponse>(
+    `/api/v1/projects/${projectId}/parse`
+  )
+  return response.data
+}
+
+export const fetchSymbols = async (
+  projectId: string,
+  params?: { name?: string; kind?: string; file_id?: string }
+): Promise<CodeSymbol[]> => {
+  const response = await api.get<SymbolListResponse>(
+    `/api/v1/projects/${projectId}/symbols`,
+    { params }
+  )
+  return response.data.symbols
+}
+
+export const fetchSymbol = async (
+  projectId: string,
+  symbolId: string
+): Promise<CodeSymbol> => {
+  const response = await api.get<CodeSymbol>(
+    `/api/v1/projects/${projectId}/symbols/${symbolId}`
+  )
+  return response.data
 }
 
 export default api
