@@ -27,6 +27,7 @@ from app.ingestion.symbol_extractor import (
     SymbolExtractor,
     SymbolExtractionStats,
 )
+from app.ingestion.chunker import Chunker
 
 __all__ = [
     "scan_repository",
@@ -47,4 +48,5 @@ __all__ = [
     "parse_file_content",
     "SymbolExtractor",
     "SymbolExtractionStats",
+    "Chunker",
 ]

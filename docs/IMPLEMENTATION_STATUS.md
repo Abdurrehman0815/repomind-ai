@@ -9,7 +9,7 @@
 | 2 | Database and Migrations | ✅ COMPLETE | 2026-10-07 |
 | 3 | Repository Import | ✅ COMPLETE | 2026-10-07 |
 | 4 | Code Parsing and Symbol Extraction | ✅ COMPLETE | 2026-10-07 |
-| 5 | Code Chunking | 🔄 NEXT | 2026-10-07 |
+| 5 | Code Chunking | ✅ COMPLETE | 2026-10-13 |
 | 6 | Local Embedding Pipeline | ⏳ PENDING | — |
 | 7 | Vector Search | ⏳ PENDING | — |
 | 8 | Hybrid Retrieval | ⏳ PENDING | — |
@@ -181,6 +181,46 @@
 
 ### Acceptance Status
 ✅ PHASE 4 ACCEPTED
+
+---
+
+## Phase 5 — Code Chunking
+
+**Status:** ✅ COMPLETE  
+**Date:** 2026-10-13
+
+### Implemented
+- [x] `Chunker` service implementing logical chunking strategy with priority: function > class > method > module section > fallback line-based chunk
+- [x] Each chunk includes metadata for retrieval and citation purposes
+- [x] Integration with `SymbolExtractor` to create chunks after symbol extraction
+- [x] Updated `__init__.py` to export the new `Chunker` class
+- [x] Modified `SymbolExtractor` to persist chunks after symbol extraction
+- [x] Chunk boundary validation and line range correctness
+- [x] Metadata population and chunk type prioritization
+- [x] Oversized function splitting with recursive line-based chunking to ensure token limits
+- [x] Duplicate chunk prevention through overlap detection
+- [x] Fallback line-based chunking for uncovered content
+- [x] Module section chunking for code not covered by symbols
+
+### Tests Passed (16/16 Phase 5, 79/79 Cumulative)
+- [x] Token counting functionality
+- [x] Creating chunks from function symbols
+- [x] Creating chunks from class symbols
+- [x] Creating chunks from method symbols with proper parent linking
+- [x] Rejecting invalid line ranges
+- [x] Chunk validation detects significant overlap
+- [x] Detection of uncovered content requiring fallback chunking
+- [x] Handling when all content is already covered
+- [x] Splitting large content into smaller chunks
+- [x] Creating chunks for module-level code
+- [x] Creating fallback line-based chunks
+- [x] Simple file chunking with functions
+- [x] Oversized functions are split safely with proper token limits
+- [x] Symbol extractor creates chunks after extracting symbols
+- [x] Chunk persistence and retrieval works correctly
+
+### Acceptance Status
+✅ PHASE 5 ACCEPTED
 
 ---
 

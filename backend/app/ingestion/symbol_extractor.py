@@ -3,6 +3,7 @@ RepoMind AI — Symbol Extraction Orchestrator
 
 Iterates over ingested file documents, invokes language parsers, resolves
 hierarchical parent-child symbol relationships, and persists extracted AST symbols.
+Also handles code chunking for vector search preparation.
 """
 from __future__ import annotations
 
@@ -12,8 +13,10 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ingestion.parsers import parse_file_content
+from app.ingestion.chunker import Chunker
 from app.models.file_document import FileDocument
 from app.models.code_symbol import CodeSymbol
+from app.repositories.chunk_repository import ChunkRepository
 from app.repositories.file_repository import FileRepository
 from app.repositories.symbol_repository import SymbolRepository
 
@@ -47,6 +50,8 @@ class SymbolExtractor:
         self.session = session
         self.file_repo = FileRepository(session)
         self.symbol_repo = SymbolRepository(session)
+        self.chunk_repo = ChunkRepository(session)
+        self.chunker = Chunker()
 
     async def extract_symbols_for_project(
         self, project_id: str
@@ -72,7 +77,9 @@ class SymbolExtractor:
     async def extract_symbols_for_file(
         self, doc: FileDocument
     ) -> list[CodeSymbol]:
-        """Parse a single source file and persist its symbols with parent-child links."""
+        """Parse a single source file and persist its symbols with parent-child links.
+        Also creates code chunks for vector search preparation.
+        """
         file_path = Path(doc.path)
         if not file_path.exists():
             doc.ast_status = "error"
@@ -89,8 +96,9 @@ class SymbolExtractor:
         # Parse AST
         result = parse_file_content(doc.language, content, file_path=doc.path)
 
-        # Clear existing symbols for this file to ensure idempotency
+        # Clear existing symbols and chunks for this file to ensure idempotency
         await self.symbol_repo.delete_by_file(doc.id)
+        await self.chunk_repo.delete_by_file(doc.id)
 
         # First pass: Create parent symbols (classes, interfaces)
         created_symbols: list[CodeSymbol] = []
@@ -130,6 +138,14 @@ class SymbolExtractor:
                 parent_symbol_id=parent_id,
             )
             created_symbols.append(sym)
+
+        # Create code chunks for vector search
+        await self.chunker.create_chunks_for_file(
+            file_doc=doc,
+            symbols=created_symbols,
+            chunk_repo=self.chunk_repo,
+            session=self.session
+        )
 
         # Update file AST status
         doc.ast_status = result.status
