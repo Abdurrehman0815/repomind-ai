@@ -13,8 +13,8 @@
 | 6 | Local Embedding Pipeline | ✅ COMPLETE | 2026-10-13 |
 | 7 | Vector Search | ✅ COMPLETE | 2026-10-14 |
 | 8 | Hybrid Retrieval | ✅ COMPLETE | 2026-10-14 |
-| 9 | Local LLM Provider | ⏳ PENDING | — |
-| 10 | Basic Codebase Chat | ⏳ PENDING | — |
+| 9 | Local LLM Provider | ✅ COMPLETE | 2026-10-14 |
+| 10 | Basic Codebase Chat | ✅ COMPLETE | 2026-10-14 |
 | 11 | Citation Engine | ⏳ PENDING | — |
 | 12 | LangGraph Supervisor | ⏳ PENDING | — |
 | 13 | Codebase Analyst Agent | ⏳ PENDING | — |
@@ -291,6 +291,76 @@
 
 ### Acceptance Status
 ✅ PHASE 7 COMPLETED (Implementation complete, tests require proper embedding model configuration)
+
+---
+
+## Phase 9 — Local LLM Provider
+
+**Status:** ✅ COMPLETE  
+**Date:** 2026-10-14
+
+### Implemented
+- [x] LocalOllamaProvider class implementing the LLMProvider abstract base class
+- [x] Full implementation of generate() method using Ollama's /api/generate endpoint
+- [x] Full implementation of stream() method using Ollama's streaming API
+- [x] Full implementation of structured_generate() method using Ollama's JSON mode
+- [x] Full implementation of tool_calling() method with basic tool call support
+- [x] Health check implementation that verifies both server availability and model presence
+- [x] Proper error handling for timeouts, connection errors, and unexpected responses
+- [x] Latency tracking and cost reporting (zero for local models)
+- [x] Support for system prompts, stop sequences, and generation options
+- [x] Integration with existing provider registry and settings configuration
+
+### Tests Passed
+- [x] Provider imports successfully without errors
+- [x] Provider instantiates correctly with default and custom parameters
+- [x] Provider properties return correct values (provider_name, model_name)
+- [x] Health check method returns boolean indicating server/model availability
+- [x] Generate method signature matches base class definition
+- [x] Stream method returns proper async iterator
+- [x] Structured_generate method signature matches base class definition
+- [x] Tool_calling method signature matches base class definition
+
+### Acceptance Status
+✅ PHASE 9 ACCEPTED
+
+---
+
+## Phase 10 — Basic Codebase Chat
+
+**Status:** ✅ COMPLETE  
+**Date:** 2026-10-14
+
+### Implemented
+- [x] Created ChatService implementing AI workflow: classify → retrieve → generate → validate citations → END
+- [x] Implemented chat endpoint (`POST /api/v1/projects/chat`) for sending messages and receiving responses
+- [x] Implemented chat history endpoint (`GET /api/v1/projects/chat/history`) for retrieving conversation history
+- [x] Added streaming response support via `stream` parameter
+- [x] Created ChatRepository for persistence of ChatSession and ChatMessage entities
+- [x] Integrated with existing ChatSession and ChatMessage models for conversation persistence
+- [x] Implemented intent classification (code_navigation, architecture_explanation, change_impact, test_plan, code_review, debugging, general_question)
+- [x] Implemented context retrieval using hybrid search (vector + keyword search with rank fusion)
+- [x] Implemented response generation using LLM provider with retrieved context
+- [x] Implemented citation validation and formatting from retrieved code chunks
+- [x] Added proper error handling and graceful degradation when context is insufficient
+- [x] Configured API routing to include chat endpoints in the versioned API
+- [x] Updated service and repository __init__.py files to export new components
+
+### Tests Passed
+- [x] ChatService imports and instantiates correctly
+- [x] ChatRepository imports and instantiates correctly
+- [x] Chat API endpoints are properly registered and accessible
+- [x] Intent classification works for various query types
+- [x] Context retrieval returns relevant code chunks when available
+- [x] Response generation produces grounded answers based on retrieved context
+- [x] Streaming response chunks are properly formatted and delivered
+- [x] Conversation persistence stores and retrieves messages correctly
+- [x] Citation extraction creates structured citation data from source chunks
+- [x] Graceful handling of insufficient context returns "I could not find sufficient evidence in the codebase to answer this question."
+- [x] Error handling returns appropriate error messages when LLM provider fails
+
+### Acceptance Status
+✅ PHASE 10 ACCEPTED
 
 ## Final Acceptance Criteria
 
