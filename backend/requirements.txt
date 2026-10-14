@@ -1,31 +1,35 @@
 # RepoMind AI — Backend Dependencies
 # Phase 1: Application skeleton
 
-# ── Web Framework ────────────────────────────────────────────
+# ── Web Framework ────────────────────────────────────────
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
 
-# ── Configuration ────────────────────────────────────────────
+# ── Configuration ────────────────────────────────────────
 pydantic==2.10.3
 pydantic-settings==2.6.1
 
-# ── Database ─────────────────────────────────────────────────
+# ── Database ─────────────────────────────────────────────
 sqlalchemy[asyncio]==2.0.36
 asyncpg==0.30.0
 alembic==1.14.0
 aiosqlite==0.20.0
 
-# ── HTTP Client ──────────────────────────────────────────────
+# ── HTTP Client ──────────────────────────────────────────
 httpx==0.28.1
 
-# ── Code Parsing & Vector Ingestion ──────────────────────────
+# ── Code Parsing & Vector Ingestion ──────────────────────
 pathspec==0.12.1
 pgvector==0.3.6
 
-# ── Logging ──────────────────────────────────────────────────
+# ── AI/ML Dependencies ───────────────────────────────────
+sentence-transformers==2.2.2
+torch==2.4.0  # CPU version; will use CUDA if available
+
+# ── Logging ──────────────────────────────────────────────
 structlog==24.4.0
 
-# ── Testing ──────────────────────────────────────────────────
+# ── Testing ──────────────────────────────────────────────
 pytest==8.3.4
 pytest-asyncio==0.24.0
 pytest-cov==6.0.0

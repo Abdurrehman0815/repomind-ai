@@ -17,6 +17,8 @@ import tiktoken
 from app.models.code_chunk import CodeChunk
 from app.models.code_symbol import CodeSymbol
 from app.models.file_document import FileDocument
+from app.ai.providers.embedding_registry import get_embedding_provider
+from app.ai.providers.embedding_base import EmbeddingOptions
 
 logger = structlog.get_logger(__name__)
 
@@ -619,9 +621,41 @@ class Chunker:
         # Generate chunk data
         chunk_data_list = self.chunk_file(file_doc, symbols)
 
-        # Persist chunks
+        if not chunk_data_list:
+            return []
+
+        # Generate embeddings for all chunks
+        texts = [chunk_data.content for chunk_data in chunk_data_list]
+        embedding_provider = get_embedding_provider()
+
+        try:
+            embedding_response = await embedding_provider.embed(
+                texts,
+                EmbeddingOptions(batch_size=32, normalize=True)
+            )
+            embeddings = embedding_response.embeddings
+
+            # Verify we got embeddings for all chunks
+            if len(embeddings) != len(chunk_data_list):
+                self.logger.warning(
+                    "Embedding count mismatch",
+                    expected=len(chunk_data_list),
+                    received=len(embeddings)
+                )
+                # If we don't have embeddings for all, proceed without them
+                embeddings = [None] * len(chunk_data_list)
+        except Exception as e:
+            self.logger.error(
+                "Failed to generate embeddings for chunks",
+                error=str(e),
+                chunk_count=len(chunk_data_list)
+            )
+            # Proceed without embeddings if generation fails
+            embeddings = [None] * len(chunk_data_list)
+
+        # Persist chunks with embeddings
         persisted_chunks = []
-        for i, chunk_data in enumerate(chunk_data_list):
+        for i, (chunk_data, embedding) in enumerate(zip(chunk_data_list, embeddings)):
             try:
                 chunk = await chunk_repo.create(
                     project_id=file_doc.project_id,
@@ -631,6 +665,7 @@ class Chunker:
                     start_line=chunk_data.start_line,
                     end_line=chunk_data.end_line,
                     token_count=self.count_tokens(chunk_data.content),
+                    embedding=embedding,
                     metadata=chunk_data.metadata
                 )
                 persisted_chunks.append(chunk)
@@ -640,7 +675,8 @@ class Chunker:
                     chunk_id=chunk.id,
                     file_id=file_doc.id,
                     lines=f"{chunk.start_line}-{chunk.end_line}",
-                    type=chunk_data.chunk_type
+                    type=chunk_data.chunk_type,
+                    has_embedding=embedding is not None
                 )
             except Exception as exc:
                 self.logger.error(

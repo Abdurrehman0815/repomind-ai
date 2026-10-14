@@ -1,9 +1,9 @@
 """
 RepoMind AI — CodeChunk Repository
 """
-from typing import Sequence, Any
+from typing import Sequence, Any, List, Tuple, Optional
 import structlog
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.code_chunk import CodeChunk
@@ -38,6 +38,70 @@ class ChunkRepository:
             .order_by(CodeChunk.created_at)
         )
         return result.scalars().all()
+
+    async def vector_search(
+        self,
+        query_embedding: List[float],
+        project_id: Optional[str] = None,
+        file_id: Optional[str] = None,
+        limit: int = 10,
+        similarity_threshold: float = 0.7,
+    ) -> List[Tuple[CodeChunk, float]]:
+        """
+        Perform vector similarity search on code chunks.
+
+        Args:
+            query_embedding: Embedding vector for the query text
+            project_id: Filter by project ID
+            file_id: Filter by file ID
+            limit: Maximum number of results to return
+            similarity_threshold: Minimum similarity score (0-1)
+
+        Returns:
+            List of tuples (CodeChunk, similarity_score) ordered by similarity descending
+        """
+        # Build the SQL query for vector similarity search
+        # Using cosine distance: 1 - cosine_similarity
+        # We want results where cosine_similarity >= similarity_threshold
+        # So: cosine_distance <= (1 - similarity_threshold)
+        distance_threshold = 1.0 - similarity_threshold
+
+        # Base query
+        query = select(
+            CodeChunk,
+            (1 - CodeChunk.embedding.cosine_distance(query_embedding)).label('similarity')
+        ).where(
+            CodeChunk.embedding.is_not(None),  # Only chunks with embeddings
+            (1 - CodeChunk.embedding.cosine_distance(query_embedding)) >= similarity_threshold
+        )
+
+        # Apply filters
+        if project_id:
+            query = query.where(CodeChunk.project_id == project_id)
+        if file_id:
+            query = query.where(CodeChunk.file_id == file_id)
+
+        # Order by similarity descending and limit
+        query = query.order_by(
+            text('similarity DESC')
+        ).limit(limit)
+
+        try:
+            result = await self.session.execute(query)
+            rows = result.all()
+
+            # Convert to list of (chunk, similarity) tuples
+            results = []
+            for row in rows:
+                chunk = row.CodeChunk
+                similarity = float(row.similarity)
+                results.append((chunk, similarity))
+
+            return results
+
+        except Exception as e:
+            logger.error(f"vector_search_failed: {str(e)}")
+            return []
 
     async def create(
         self,
