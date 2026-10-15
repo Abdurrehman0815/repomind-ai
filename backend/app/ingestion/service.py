@@ -6,6 +6,7 @@ and database persistence for projects and source file documents.
 """
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -105,6 +106,38 @@ class IngestionService:
         self.file_repo = FileRepository(session)
         self.settings = get_settings()
 
+    def _get_repository_commit(self, project_path: str) -> Optional[str]:
+        """
+        Get the current git commit hash for the repository at project_path.
+        Returns None if not a git repository or on error.
+        """
+        try:
+            # Run git rev-parse HEAD in the project directory
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=project_path,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                commit_hash = result.stdout.strip()
+                # Validate that it looks like a hash (40 hex characters)
+                if len(commit_hash) == 40 and all(c in "0123456789abcdefABCDEF" for c in commit_hash):
+                    return commit_hash
+                else:
+                    logger.warning("unexpected_git_output", output=commit_hash)
+                    return None
+            else:
+                logger.warning("git_command_failed", stderr=result.stderr)
+                return None
+        except subprocess.TimeoutExpired:
+            logger.warning("git_command_timeout")
+            return None
+        except Exception as e:
+            logger.error("error_getting_repository_commit", error=str(e))
+            return None
+
     async def import_repository(
         self,
         path: str,
@@ -137,6 +170,15 @@ class IngestionService:
             summary = await self.sync_files(project)
             # Update status to unindexed (files imported, chunks/symbols pending in Phase 4)
             await self.project_repo.update_status(project.id, "unindexed")
+
+            # Update repository commit hash
+            commit_hash = self._get_repository_commit(canonical_path_str)
+            if commit_hash:
+                await self.project_repo.update_commit_hash(project.id, commit_hash)
+                logger.info("repository_commit_updated", project_id=project.id, commit_hash=commit_hash[:8])
+            else:
+                logger.warning("failed_to_get_repository_commit", project_id=project.id)
+
             return project, summary
         except Exception as exc:
             logger.error("import_repository_failed", project_id=project.id, error=str(exc))

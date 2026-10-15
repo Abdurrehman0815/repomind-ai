@@ -13,7 +13,7 @@ import json
 from typing import AsyncIterator
 
 from app.db.session import get_db
-from app.services.chat_service import ChatService
+from app.services.supervisor_service import SupervisorService
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
@@ -59,12 +59,12 @@ async def chat_message(
             detail="message cannot be empty"
         )
 
-    # Initialize chat service
-    chat_service = ChatService(db)
+    # Initialize supervisor service
+    supervisor_service = SupervisorService(db)
 
     try:
         # Process the message through the AI workflow
-        result = await chat_service.process_message(
+        result = await supervisor_service.process_message(
             project_id=project_id,
             session_id=session_id,
             user_message=message.strip(),

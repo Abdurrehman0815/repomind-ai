@@ -15,8 +15,8 @@
 | 8 | Hybrid Retrieval | ✅ COMPLETE | 2026-10-14 |
 | 9 | Local LLM Provider | ✅ COMPLETE | 2026-10-14 |
 | 10 | Basic Codebase Chat | ✅ COMPLETE | 2026-10-14 |
-| 11 | Citation Engine | ⏳ PENDING | — |
-| 12 | LangGraph Supervisor | ⏳ PENDING | — |
+| 11 | Citation Engine | ✅ COMPLETE | 2026-10-14 |
+| 12 | LangGraph Supervisor | ✅ COMPLETE | 2026-10-15 |
 | 13 | Codebase Analyst Agent | ⏳ PENDING | — |
 | 14 | Dependency Graph | ⏳ PENDING | — |
 | 15 | Implementation Planner Agent | ⏳ PENDING | — |
@@ -352,7 +352,7 @@
 - [x] Chat API endpoints are properly registered and accessible
 - [x] Intent classification works for various query types
 - [x] Context retrieval returns relevant code chunks when available
-- [x] Response generation produces grounded answers based on retrieved context
+- [x] Response production produces grounded answers based on retrieved context
 - [x] Streaming response chunks are properly formatted and delivered
 - [x] Conversation persistence stores and retrieves messages correctly
 - [x] Citation extraction creates structured citation data from source chunks
@@ -361,6 +361,50 @@
 
 ### Acceptance Status
 ✅ PHASE 10 ACCEPTED
+
+---
+
+## Phase 11 — Citation Engine
+
+**Status:** ✅ COMPLETE  
+**Date:** 2026-10-14
+
+### Implemented
+- [x] Created citation service (backend/app/services/citation_service.py)
+- [x] Created citation schema (backend/app/schemas/citation.py)
+- [x] Updated chat service to use citation service for validating and formatting citations
+- [x] Added repository_commit column to Project model
+- [x] Created migration to add repository_commit column
+- [x] Updated project repository to include update_commit_hash method
+- [x] Updated ingestion service to store repository commit hash during import/sync
+- [x] Created unit tests for citation service
+
+### Acceptance Status
+✅ PHASE 11 ACCEPTED
+
+---
+
+## Phase 12 — LangGraph Supervisor
+**Status:** ✅ COMPLETE
+**Date:** 2026-10-15
+
+### Implemented
+- [x] Created supervisor service (backend/app/services/supervisor_service.py)
+- [x] Updated chat API to use supervisor service (backend/app/api/v1/chat.py)
+- [x] Fixed logging calls in local embedding provider (backend/app/ai/providers/local_embedding.py)
+- [x] Integrated LangGraph supervisor to orchestrate the AI workflow (classify → retrieve → generate → validate → answer)
+- [x] Reused existing services (retrieval, citation, chat) instead of duplicating logic
+- [x] Ensured responses are grounded in actual indexed repository content
+- [x] Provided final-answer stage that combines agent results into one coherent response
+- [x] Handled unsupported requests, missing repository context, empty results, model failures, tool errors, and database connection errors gracefully
+- [x] Prevented unlimited agent handoffs or graph loops with explicit execution limit and clear termination conditions
+- [x] Respected existing asynchronous patterns, API conventions, configuration, and error-response format
+- [x] Kept API keys and passwords in environment configuration
+
+### Acceptance Status
+✅ PHASE 12 ACCEPTED
+
+---
 
 ## Final Acceptance Criteria
 

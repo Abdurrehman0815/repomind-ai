@@ -13,9 +13,12 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.providers.registry import get_llm_provider
-from app.ai.providers.base import GenerateOptions
+from app.ai.providers.base import GenerateOptions, StreamChunk
 from app.models.chat import ChatSession, ChatMessage
+from app.models.project import Project
 from app.repositories.chat_repository import ChatRepository
+from app.repositories.project_repository import ProjectRepository
+from app.services.citation_service import CitationService
 from app.services.retrieval_service import RetrievalService
 
 logger = structlog.get_logger(__name__)
@@ -27,7 +30,9 @@ class ChatService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.chat_repo = ChatRepository(session)
+        self.project_repo = ProjectRepository(session)
         self.retrieval_service = RetrievalService(session)
+        self.citation_service = CitationService(session)
 
     async def process_message(
         self,
@@ -107,9 +112,10 @@ class ChatService:
                     intent=intent
                 )
 
-                # Step 4: Validate and format citations
+                # Step 4: Validate and format citations using citation service
                 citations = await self._validate_and_format_citations(
-                    retrieved_context=retrieved_context
+                    retrieved_context=retrieved_context,
+                    project_id=project_id
                 )
 
                 # Store assistant message
@@ -294,7 +300,6 @@ Please provide a concise, accurate answer based only on the provided context. If
                 intent=intent
             )
             # Yield the no evidence message and finish
-            from app.ai.providers.base import StreamChunk
             yield StreamChunk(
                 content="I could not find sufficient evidence in the codebase to answer this question.",
                 is_final=True
@@ -332,7 +337,6 @@ Please provide a concise, accurate answer based only on the provided context. If
                 intent=intent
             )
             # Yield an error chunk
-            from app.ai.providers.base import StreamChunk
             yield StreamChunk(
                 content="I encountered an error while generating the response. Please try again.",
                 is_final=True
@@ -384,35 +388,57 @@ You must:
 
     async def _validate_and_format_citations(
         self,
-        retrieved_context: List[Tuple[Any, float]]
+        retrieved_context: List[Tuple[Any, float]],
+        project_id: str
     ) -> List[dict[str, Any]]:
         """
-        Validate and format citations from retrieved context.
-        For Phase 10, we'll create basic citations from the retrieved chunks.
+        Validate and format citations from retrieved context using the citation service.
         """
         citations = []
 
+        # Get project path for validation
+        project = await self.project_repo.get(project_id)
+        project_path = project.path if project else None
+
         for i, (chunk, score) in enumerate(retrieved_context[:3]):  # Top 3 chunks for citations
             try:
-                # Assuming chunk has the necessary attributes for citation
-                file_id = getattr(chunk, 'file_id', None)
-                start_line = getattr(chunk, 'start_line', None)
-                end_line = getattr(chunk, 'end_line', None)
-                content = getattr(chunk, 'content', '')
+                # Create citation using citation service
+                citation_response = await self.citation_service.create_citation_from_chunk(
+                    chunk=chunk,
+                    project_id=project_id
+                )
 
-                if file_id is not None and start_line is not None and end_line is not None:
-                    citation = {
-                        "file_id": str(file_id),
-                        "start_line": int(start_line),
-                        "end_line": int(end_line),
-                        "content_preview": content[:100] + "..." if len(content) > 100 else content,
-                        "relevance_score": float(score)
-                    }
-                    citations.append(citation)
+                # Validate citation if we have project path
+                is_valid = True
+                validation_reason = ""
+                if project_path:
+                    is_valid, validation_reason = await self.citation_service.validate_citation(
+                        citation_response, project_path
+                    )
+                    if not is_valid:
+                        logger.warning(
+                            "citation_validation_failed",
+                            reason=validation_reason,
+                            chunk_index=i
+                        )
+                        # Still include citation but mark as invalid? We'll keep is_stale from citation service.
 
-            except (ValueError, TypeError, AttributeError) as exc:
-                logger.warning(
-                    "citation_validation_failed",
+                # Convert to dictionary for storage in chat message
+                citation_dict = {
+                    "file_path": citation_response.file_path,
+                    "start_line": citation_response.start_line,
+                    "end_line": citation_response.end_line,
+                    "symbol": citation_response.symbol,
+                    "file_hash": citation_response.file_hash,
+                    "repository_commit": citation_response.repository_commit,
+                    "is_stale": citation_response.is_stale,
+                    "relevance_score": float(score)  # We can add relevance score if needed
+                }
+                citations.append(citation_dict)
+
+            except Exception as exc:
+                logger.error(
+                    "citation_creation_failed",
                     error=str(exc),
                     chunk_index=i
                 )

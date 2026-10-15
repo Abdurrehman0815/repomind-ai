@@ -126,12 +126,7 @@ class LocalEmbeddingProvider(EmbeddingProvider):
                 self._dimensions = actual_dimensions
 
             self._model_ready = True
-            logger.info(
-                "Local embedding model loaded successfully",
-                model=self._model_name,
-                dimensions=self._dimensions,
-                device=self._device
-            )
+            logger.info(f"Local embedding model loaded successfully: model={self._model_name}, dimensions={self._dimensions}, device={self._device}")
 
         except Exception as e:
             logger.error(f"Failed to load embedding model: {str(e)} (model={self._model_name})")
@@ -227,12 +222,7 @@ class LocalEmbeddingProvider(EmbeddingProvider):
 
             latency_ms = (time.time() - start_time) * 1000
 
-            logger.debug(
-                "Generated embeddings",
-                count=len(all_embeddings),
-                batch_size=batch_size,
-                latency_ms=round(latency_ms, 2)
-            )
+            logger.debug(f"Generated embeddings: count={len(all_embeddings)}, batch_size={batch_size}, latency_ms={round(latency_ms, 2)}")
 
             return EmbeddingResponse(
                 embeddings=all_embeddings,

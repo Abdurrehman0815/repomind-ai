@@ -60,6 +60,14 @@ class ProjectRepository:
             await self.session.flush()
         return project
 
+    async def update_commit_hash(self, project_id: str, commit_hash: str) -> Project | None:
+        """Update the repository commit hash for a project."""
+        project = await self.get_by_id(project_id)
+        if project:
+            project.repository_commit = commit_hash
+            await self.session.flush()
+        return project
+
     async def delete(self, project_id: str) -> bool:
         project = await self.get_by_id(project_id)
         if project:

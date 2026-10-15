@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     # ── Database ────────────────────────────────────────────────
     database_url: str = Field(
-        default="postgresql+asyncpg://repomind:repomind_password@localhost:5432/repomind"
+        default="postgresql+asyncpg://repomind:repomind_password@localhost:5433/repomind"
     )
     db_pool_size: int = 10
     db_max_overflow: int = 20
