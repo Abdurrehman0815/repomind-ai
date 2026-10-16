@@ -81,3 +81,20 @@ export interface SymbolParseResponse {
     files_with_errors: number
   }
 }
+
+export interface Dependency {
+  id: string
+  project_id: string
+  source_file_id: string
+  target_file_id?: string | null
+  target_module: string
+  import_statement: string
+  symbol_name?: string | null
+  line_number?: number | null
+  created_at: string
+}
+
+export interface DependencyListResponse {
+  dependencies: Dependency[]
+  total: number
+}

@@ -8,6 +8,8 @@ import type {
   CodeSymbol,
   SymbolListResponse,
   SymbolParseResponse,
+  Dependency,
+  DependencyListResponse,
 } from '@/types'
 
 const api = axios.create({
@@ -97,6 +99,25 @@ export const fetchSymbol = async (
     `/api/v1/projects/${projectId}/symbols/${symbolId}`
   )
   return response.data
+}
+
+export const fetchProjectDependencies = async (
+  projectId: string
+): Promise<Dependency[]> => {
+  const response = await api.get<DependencyListResponse>(
+    `/api/v1/projects/${projectId}/dependencies`
+  )
+  return response.data.dependencies
+}
+
+export const fetchFileDependencies = async (
+  projectId: string,
+  fileId: string
+): Promise<Dependency[]> => {
+  const response = await api.get<DependencyListResponse>(
+    `/api/v1/projects/${projectId}/files/${fileId}/dependencies`
+  )
+  return response.data.dependencies
 }
 
 export default api
