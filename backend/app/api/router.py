@@ -10,6 +10,7 @@ from app.api.v1.projects import router as projects_router
 from app.api.v1.symbols import router as symbols_router
 from app.api.v1.retrieval import router as retrieval_router
 from app.api.v1.chat import router as chat_router
+from app.api.v1.dependencies import router as dependencies_router
 
 api_router = APIRouter()
 
@@ -36,4 +37,9 @@ api_router.include_router(
     chat_router,
     prefix="/api/v1/projects",
     tags=["chat"],
+)
+api_router.include_router(
+    dependencies_router,
+    prefix="/api/v1/projects",
+    tags=["dependencies"],
 )

@@ -3,7 +3,7 @@ RepoMind AI — Symbol Extraction Orchestrator
 
 Iterates over ingested file documents, invokes language parsers, resolves
 hierarchical parent-child symbol relationships, and persists extracted AST symbols.
-Also handles code chunking for vector search preparation.
+Also handles code chunking for vector search preparation and dependency extraction.
 """
 from __future__ import annotations
 
@@ -16,7 +16,9 @@ from app.ingestion.parsers import parse_file_content
 from app.ingestion.chunker import Chunker
 from app.models.file_document import FileDocument
 from app.models.code_symbol import CodeSymbol
+from app.models.dependency import Dependency
 from app.repositories.chunk_repository import ChunkRepository
+from app.repositories.dependency_repository import DependencyRepository
 from app.repositories.file_repository import FileRepository
 from app.repositories.symbol_repository import SymbolRepository
 
@@ -51,6 +53,7 @@ class SymbolExtractor:
         self.file_repo = FileRepository(session)
         self.symbol_repo = SymbolRepository(session)
         self.chunk_repo = ChunkRepository(session)
+        self.dep_repo = DependencyRepository(session)
         self.chunker = Chunker()
 
     async def extract_symbols_for_project(
@@ -146,6 +149,17 @@ class SymbolExtractor:
             chunk_repo=self.chunk_repo,
             session=self.session
         )
+
+        # Save dependencies
+        for dep in result.dependencies:
+            await self.dep_repo.create(
+                project_id=doc.project_id,
+                source_file_id=doc.id,
+                target_module=dep.module,
+                import_statement=dep.raw_statement,
+                symbol_name=dep.symbol_name,
+                line_number=dep.line_number,
+            )
 
         # Update file AST status
         doc.ast_status = result.status

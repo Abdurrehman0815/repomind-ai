@@ -14,6 +14,10 @@ from app.schemas.symbol import (
     SymbolListResponse,
     SymbolParseResponse,
 )
+from app.schemas.dependency import (
+    DependencyResponse,
+    DependencyListResponse,
+)
 
 __all__ = [
     "ProjectCreateRequest",
@@ -25,4 +29,6 @@ __all__ = [
     "CodeSymbolResponse",
     "SymbolListResponse",
     "SymbolParseResponse",
+    "DependencyResponse",
+    "DependencyListResponse",
 ]

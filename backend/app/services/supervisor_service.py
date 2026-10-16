@@ -20,6 +20,8 @@ from app.repositories.chat_repository import ChatRepository
 from app.repositories.project_repository import ProjectRepository
 from app.services.citation_service import CitationService
 from app.services.retrieval_service import RetrievalService
+from app.agents.codebase_analyst_agent import CodebaseAnalystAgent
+from app.agents.planner_agent import PlannerAgent
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
@@ -49,6 +51,8 @@ class SupervisorService:
         self.project_repo = ProjectRepository(session)
         self.retrieval_service = RetrievalService(session)
         self.citation_service = CitationService(session)
+        self.codebase_analyst = CodebaseAnalystAgent(session)
+        self.planner_agent = PlannerAgent(session)
         # Build the LangGraph
         self.graph = self._build_graph()
 
@@ -74,6 +78,31 @@ class SupervisorService:
         # Add error handling? We'll handle errors in each node and set error state.
         # For now, we'll let exceptions propagate and be caught by the caller.
 
+    def _stream_analysis_result(self, analysis_result: dict, analysis_type: str):
+        """Stream an analysis result as chunks for streaming responses."""
+        # Create an async iterator that yields the analysis result as chunks
+        async def analysis_stream():
+            # First chunk: the main answer content
+            answer_content = analysis_result.get("answer", "")
+            if answer_content:
+                yield StreamChunk(
+                    content=answer_content,
+                    is_final=False
+                )
+
+            # Second chunk: metadata and completion signal
+            metadata = analysis_result.get("metadata", {})
+            confidence = analysis_result.get("confidence", "unknown")
+            sources_count = len(analysis_result.get("sources", []))
+
+            completion_content = f"\n\n*Analysis completed with {confidence} confidence based on {sources_count} source references.*"
+            yield StreamChunk(
+                content=completion_content,
+                is_final=True
+            )
+
+        return analysis_stream()
+
         return workflow.compile()
 
     async def _classify_intent_node(self, state: SupervisorState) -> Dict[str, Any]:
@@ -90,12 +119,47 @@ class SupervisorService:
         if state.get("error"):
             return {}  # Skip if error already occurred
         try:
-            retrieved_context = await self._retrieve_context(
-                project_id=state["project_id"],
-                query=state["user_query"],
-                intent=state["intent"]
-            )
-            return {"retrieved_context": retrieved_context}
+            # Use specialized agents for specific intents
+            if state["intent"] == "architecture_explanation":
+                analysis_result = await self.codebase_analyst.analyze_architecture(
+                    project_id=state["project_id"],
+                    query=state["user_query"],
+                    session_id=state["session_id"]
+                )
+                # For architecture analysis, we still want to return context for the rest of the pipeline
+                # but we'll store the analysis results in the state for later use
+                return {
+                    "retrieved_context": [],  # We'll get context from the analysis if needed
+                    "architecture_analysis": analysis_result
+                }
+            elif state["intent"] == "code_navigation":
+                analysis_result = await self.codebase_analyst.analyze_code_navigation(
+                    project_id=state["project_id"],
+                    query=state["user_query"],
+                    session_id=state["session_id"]
+                )
+                return {
+                    "retrieved_context": [],  # We'll get context from the analysis if needed
+                    "code_navigation_analysis": analysis_result
+                }
+            elif state["intent"] == "implementation_plan":
+                analysis_result = await self.planner_agent.create_implementation_plan(
+                    project_id=state["project_id"],
+                    feature_requirement=state["user_query"],
+                    session_id=state["session_id"]
+                )
+                return {
+                    "retrieved_context": [],  # We'll get context from the analysis if needed
+                    "implementation_plan_analysis": analysis_result
+                }
+            else:
+                # Use standard retrieval for other intents
+                retrieved_context = await self._retrieve_context(
+                    project_id=state["project_id"],
+                    query=state["user_query"],
+                    intent=state["intent"]
+                )
+                return {"retrieved_context": retrieved_context}
         except Exception as exc:
             logger.error("context_retrieval_failed", error=str(exc))
             return {"error": f"Context retrieval failed: {str(exc)}"}
@@ -105,38 +169,95 @@ class SupervisorService:
         if state.get("error"):
             return {}
         try:
-            if state["stream"]:
-                # For streaming, we'll return an async iterator
-                response_generator = self._generate_streaming_response(
-                    user_message=state["user_query"],
-                    retrieved_context=state["retrieved_context"],
-                    intent=state["intent"]
-                )
-                return {"response_generator": response_generator}
+            # Handle analysis results from specialized agents
+            if state.get("architecture_analysis"):
+                analysis = state["architecture_analysis"]
+                if state["stream"]:
+                    # For streaming, convert the analysis to a stream
+                    response_generator = self._stream_analysis_result(
+                        analysis_result=analysis,
+                        analysis_type="architecture_explanation"
+                    )
+                    return {"response_generator": response_generator}
+                else:
+                    return {
+                        "generated_response": analysis.get("answer", ""),
+                        "analysis_metadata": analysis.get("metadata", {}),
+                        "analysis_type": "architecture_explanation"
+                    }
+            elif state.get("code_navigation_analysis"):
+                analysis = state["code_navigation_analysis"]
+                if state["stream"]:
+                    # For streaming, convert the analysis to a stream
+                    response_generator = self._stream_analysis_result(
+                        analysis_result=analysis,
+                        analysis_type="code_navigation"
+                    )
+                    return {"response_generator": response_generator}
+                else:
+                    return {
+                        "generated_response": analysis.get("answer", ""),
+                        "analysis_metadata": analysis.get("metadata", {}),
+                        "analysis_type": "code_navigation"
+                    }
+            elif state.get("implementation_plan_analysis"):
+                analysis = state["implementation_plan_analysis"]
+                if state["stream"]:
+                    # For streaming, convert the analysis to a stream
+                    response_generator = self._stream_analysis_result(
+                        analysis_result=analysis,
+                        analysis_type="implementation_plan"
+                    )
+                    return {"response_generator": response_generator}
+                else:
+                    return {
+                        "generated_response": analysis.get("answer", ""),
+                        "analysis_metadata": analysis.get("metadata", {}),
+                        "analysis_type": "implementation_plan"
+                    }
             else:
-                response_content = await self._generate_response(
-                    user_message=state["user_query"],
-                    retrieved_context=state["retrieved_context"],
-                    intent=state["intent"]
-                )
-                return {"generated_response": response_content}
+                # Use standard response generation for other intents
+                if state["stream"]:
+                    # For streaming, we'll return an async iterator
+                    response_generator = self._generate_streaming_response(
+                        user_message=state["user_query"],
+                        retrieved_context=state["retrieved_context"],
+                        intent=state["intent"]
+                    )
+                    return {"response_generator": response_generator}
+                else:
+                    response_content = await self._generate_response(
+                        user_message=state["user_query"],
+                        retrieved_context=state["retrieved_context"],
+                        intent=state["intent"]
+                    )
+                    return {"generated_response": response_content}
         except Exception as exc:
             logger.error("response_generation_failed", error=str(exc))
             return {"error": f"Response generation failed: {str(exc)}"}
 
     async def _validate_citations_node(self, state: SupervisorState) -> Dict[str, Any]:
-        """Validate and format citations from retrieved context."""
+        """Validate and format citations from retrieved context or analysis results."""
         if state.get("error"):
             return {}
         # Skip citation validation for streaming? We'll do it for non-streaming for now.
         if state["stream"]:
             return {}
         try:
-            citations = await self._validate_and_format_citations(
-                retrieved_context=state["retrieved_context"],
-                project_id=state["project_id"]
-            )
-            return {"citations": citations}
+            # If we have analysis results with existing citations, use those
+            if state.get("architecture_analysis") and state["architecture_analysis"].get("sources"):
+                return {"citations": state["architecture_analysis"]["sources"]}
+            elif state.get("code_navigation_analysis") and state["code_navigation_analysis"].get("sources"):
+                return {"citations": state["code_navigation_analysis"]["sources"]}
+            elif state.get("implementation_plan_analysis") and state["implementation_plan_analysis"].get("sources"):
+                return {"citations": state["implementation_plan_analysis"]["sources"]}
+            else:
+                # Otherwise, validate and format citations from retrieved context
+                citations = await self._validate_and_format_citations(
+                    retrieved_context=state["retrieved_context"],
+                    project_id=state["project_id"]
+                )
+                return {"citations": citations}
         except Exception as exc:
             logger.error("citation_validation_failed", error=str(exc))
             return {"error": f"Citation validation failed: {str(exc)}"}
@@ -148,10 +269,9 @@ class SupervisorService:
         if state["stream"]:
             # For streaming, the response is handled by the generator
             return {}
-        # For non-streaming, we already have the generated response and citations.
-        # We just need to ensure the state has the response and citations.
-        # The generate_response node already set generated_response.
-        # The validate_citations node already set citations.
+        # For non-streaming responses from analysis, we may need to store the assistant message
+        # The actual response content and citations are already set in generate_response and validate_citations nodes
+        # We just need to return empty dict to continue the flow
         return {}
 
     # Helper methods that reuse existing logic from ChatService
@@ -164,6 +284,8 @@ class SupervisorService:
             return "code_navigation"
         elif any(word in message_lower for word in ["explain", "how", "what", "why", "architecture", "flow"]):
             return "architecture_explanation"
+        elif any(word in message_lower for word in ["plan", "planning", "implement", "implementation", "build", "create"]):
+            return "implementation_plan"
         elif any(word in message_lower for word in ["change", "impact", "modify", "add", "remove"]):
             return "change_impact"
         elif any(word in message_lower for word in ["test", "testing", "test plan"]):
@@ -490,21 +612,48 @@ You must:
 
             if stream:
                 # For streaming, we return the generator and let the caller handle it
-                return {
+                response_dict = {
                     "session_id": chat_session.id,
                     "message_id": user_chat_message.id,
                     "intent": final_state["intent"],
                     "stream": True,
                     "response_generator": final_state["response_generator"]
                 }
+
+                # Add analysis metadata if available
+                if final_state.get("architecture_analysis"):
+                    response_dict["analysis_metadata"] = final_state["architecture_analysis"].get("metadata", {})
+                    response_dict["analysis_type"] = "architecture_explanation"
+                elif final_state.get("code_navigation_analysis"):
+                    response_dict["analysis_metadata"] = final_state["code_navigation_analysis"].get("metadata", {})
+                    response_dict["analysis_type"] = "code_navigation"
+
+                return response_dict
             else:
                 # Non-streaming response
                 # Store assistant message
+                content_to_store = final_state.get("generated_response", "")
+                citations_to_store = final_state.get("citations", [])
+
+                # If we have analysis results, use their content and citations
+                if final_state.get("architecture_analysis"):
+                    analysis = final_state["architecture_analysis"]
+                    content_to_store = analysis.get("answer", "")
+                    citations_to_store = analysis.get("sources", [])
+                elif final_state.get("code_navigation_analysis"):
+                    analysis = final_state["code_navigation_analysis"]
+                    content_to_store = analysis.get("answer", "")
+                    citations_to_store = analysis.get("sources", [])
+                elif final_state.get("implementation_plan_analysis"):
+                    analysis = final_state["implementation_plan_analysis"]
+                    content_to_store = analysis.get("answer", "")
+                    citations_to_store = analysis.get("sources", [])
+
                 assistant_chat_message = await self.chat_repo.add_message(
                     session_id=chat_session.id,
                     role="assistant",
-                    content=final_state["generated_response"],
-                    citations=final_state["citations"]
+                    content=content_to_store,
+                    citations=citations_to_store
                 )
 
                 logger.info(
@@ -513,18 +662,32 @@ You must:
                     user_message_id=user_chat_message.id,
                     assistant_message_id=assistant_chat_message.id,
                     intent=final_state["intent"],
-                    context_chunks=len(final_state["retrieved_context"]),
-                    citations_count=len(final_state["citations"])
+                    context_chunks=len(final_state.get("retrieved_context", [])),
+                    citations_count=len(final_state.get("citations", []))
                 )
 
-                return {
+                # Prepare response dictionary
+                response_dict = {
                     "session_id": chat_session.id,
                     "message_id": user_chat_message.id,
-                    "response": final_state["generated_response"],
+                    "response": final_state.get("generated_response", ""),
                     "intent": final_state["intent"],
-                    "citations": final_state["citations"],
+                    "citations": final_state.get("citations", []),
                     "stream": False
                 }
+
+                # Add analysis metadata if available
+                if final_state.get("architecture_analysis"):
+                    response_dict["analysis_metadata"] = final_state["architecture_analysis"].get("metadata", {})
+                    response_dict["analysis_type"] = "architecture_explanation"
+                elif final_state.get("code_navigation_analysis"):
+                    response_dict["analysis_metadata"] = final_state["code_navigation_analysis"].get("metadata", {})
+                    response_dict["analysis_type"] = "code_navigation"
+                elif final_state.get("implementation_plan_analysis"):
+                    response_dict["analysis_metadata"] = final_state["implementation_plan_analysis"].get("metadata", {})
+                    response_dict["analysis_type"] = "implementation_plan"
+
+                return response_dict
 
         except Exception as exc:
             logger.error(
