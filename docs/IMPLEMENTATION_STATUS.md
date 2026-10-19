@@ -22,10 +22,10 @@
 | 15 | Implementation Planner Agent | ✅ COMPLETE | 2026-10-16 |
 | 16 | Change Impact Analysis | ✅ COMPLETE | 2026-10-17 |
 | 17 | MCP Server | ✅ COMPLETE | 2026-10-19 |
-| 18 | Tool-Using Agent | ⏳ PENDING | — |
-| 19 | Safe Test Execution | ⏳ PENDING | — |
-| 20 | Code Review Agent | ⏳ PENDING | — |
-| 21 | Test Plan Agent | ⏳ PENDING | — |
+| 18 | Tool-Using Agent | ✅ COMPLETE | 2026-10-19 |
+| 19 | Safe Test Execution | ✅ COMPLETE | 2026-10-19 |
+| 20 | Code Review Agent | ✅ COMPLETE | 2026-10-19 |
+| 21 | Test Plan Agent | ✅ COMPLETE | 2026-10-19 |
 | 22 | Debugging Agent | ⏳ PENDING | — |
 | 23 | Memory | ⏳ PENDING | — |
 | 24 | Agent Trace | ⏳ PENDING | — |
@@ -41,7 +41,7 @@
 
 ## Phase 0 — Analysis and Project Contract
 
-**Status:** ✅ COMPLETE  
+**Status:** ✅ COMPLETE
 **Date:** 2026-10-07
 
 ### Implemented
@@ -544,7 +544,10 @@
 ### Acceptance Status
 ✅ PHASE 16 ACCEPTED
 
+
 ---
+
+
 
 ## Phase 17 — MCP Server
 
@@ -600,5 +603,104 @@
 
 ### Acceptance Status
 ✅ PHASE 17 ACCEPTED
+
+## Phase 18 — Tool-Using Agent
+
+**Status:** ✅ COMPLETE  
+**Date:** 2026-10-19
+
+### Implemented
+- [x] Added `ToolUsingAgent`, an auditable policy for deciding when repository evidence is needed.
+- [x] Added `FastMCPToolGateway`, which invokes the registered FastMCP tool surface instead of duplicating tool logic.
+- [x] Integrated a `use_tools` node into the LangGraph supervisor between intent classification and retrieval.
+- [x] Searches inspect at most two returned source files, preventing uncontrolled repository reads.
+- [x] Added compact `tool_trace` response metadata with tool, arguments, reason, status, and a non-sensitive result summary.
+- [x] Restricted automatic selection to inspection tools; command execution is not selected in this phase.
+- [x] Added `backend/tests/unit/test_phase18.py` as the tool-selection benchmark.
+
+### Tests Passed (4/4 Phase 18, 126/126 Cumulative)
+- [x] Debugging questions select search, symbol inspection, and related-test discovery.
+- [x] Architecture questions select repository mapping, search, and dependency inspection.
+- [x] Greetings do not trigger MCP tool calls.
+- [x] Search results trigger bounded source-file inspection and create an auditable trace.
+
+### Acceptance Status
+✅ PHASE 18 ACCEPTED
+
+---
+
+## Phase 19 — Safe Test Execution
+
+**Status:** ✅ COMPLETE
+**Date:** 2026-10-19
+
+### Implemented
+- [x] Preserved fixed allowlists for `pytest`, `npm test`, `ruff`, `mypy`, and `npm run lint`; the agent cannot form arbitrary shell commands.
+- [x] Added `_validate_test_target` to reject runner-option injection such as `-k expression` before invoking pytest.
+- [x] Restricted targeted execution to pytest; `npm_test` accepts no user-supplied target path.
+- [x] Added explicit user-confirmation gating in `ToolUsingAgent.select_execution_tools`; normal chat questions cannot execute commands.
+- [x] Kept execution out of the current UI workflow while the controls remain backend-only.
+- [x] Added `backend/tests/unit/test_phase19.py` for execution-policy and input-security coverage.
+
+### Tests Passed (6/6 Phase 19, 132/132 Cumulative)
+- [x] Execution requires explicit confirmation.
+- [x] Confirmed test requests select only the fixed pytest command.
+- [x] Confirmed lint requests select only the fixed Ruff command.
+- [x] Pytest option injection is rejected.
+- [x] Targeted npm execution is rejected.
+- [x] Valid pytest paths are passed as one validated literal argument.
+
+### Acceptance Status
+✅ PHASE 19 ACCEPTED
+
+---
+
+
+
+---
+## Phase 20 — Code Review Agent
+
+**Status:** ✅ COMPLETE
+**Date:** 2026-10-19
+
+### Implemented
+- [x] Added `CodeReviewAgent` for pasted unified diffs or a working-tree diff retrieved through the `git_diff` MCP tool.
+- [x] Implemented the review workflow: diff → changed files → current-file context → dependencies → related tests → deterministic findings.
+- [x] Added source-line parsing for unified diffs, so each finding identifies its changed file and new-file line number.
+- [x] Added evidence-based rules for hardcoded credentials, disabled TLS verification, dynamic code execution, broad exception handling, swallowed exceptions, and debug output.
+- [x] Added bounded, non-fatal MCP context gathering; a pasted diff can still be reviewed when a repository is unindexed.
+- [x] Routed `code_review` intent through `CodeReviewAgent` in the LangGraph supervisor.
+- [x] Added `backend/tests/unit/test_phase20.py` with intentionally buggy and clean diff fixtures.
+
+### Tests Passed (4/4 Phase 20, 136/136 Cumulative)
+- [x] Detects a hardcoded credential with exact file and line evidence.
+- [x] Detects a swallowed broad exception.
+- [x] Does not create speculative findings for a clean diff.
+- [x] Uses Git diff, file context, dependency, and test-search MCP tools when no diff is pasted.
+
+### Acceptance Status
+✅ PHASE 20 ACCEPTED
+
+---
+
+## Phase 21 — Test Plan Agent
+
+**Status:** ✅ COMPLETE
+**Date:** 2026-10-19
+
+### Implemented
+- [x] Added `TestPlanAgent` for feature and requirement-driven test planning.
+- [x] Produces required Unit, Integration, API, Edge, Security, and Regression coverage sections.
+- [x] Uses bounded MCP repository search and test-directory inspection to make plans aware of available context.
+- [x] Gracefully produces an actionable plan when repository context is unavailable.
+- [x] Routed `test_plan` intent through the LangGraph supervisor.
+- [x] Added `backend/tests/unit/test_phase21.py` using a checkout/payment-confirmation feature requirement.
+
+### Tests Passed (2/2 Phase 21, 138/138 Cumulative)
+- [x] Checkout feature plan contains all six required test categories and repository-context metadata.
+- [x] The agent remains actionable when context tools fail.
+
+### Acceptance Status
+✅ PHASE 21 ACCEPTED
 
 ---

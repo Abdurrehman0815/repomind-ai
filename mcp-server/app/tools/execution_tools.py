@@ -37,6 +37,17 @@ SUPPORTED_LINTERS: dict[str, list[str]] = {
 }
 
 
+def _validate_test_target(repo_root: Path, path: str) -> str:
+    """Return a safe relative pytest target, rejecting option injection."""
+    requested = path.strip()
+    if requested.startswith("-"):
+        raise SecurityError("Test target must be a repository path, not a command option")
+    target_path = validate_repo_path(repo_root, requested)
+    if not target_path.exists():
+        raise FileNotFoundError(f"Test target does not exist: '{requested}'")
+    return target_path.relative_to(repo_root).as_posix()
+
+
 async def run_tests(
     project_id: str,
     test_framework: str = "pytest",
@@ -60,10 +71,9 @@ async def run_tests(
     cmd = list(SUPPORTED_TEST_FRAMEWORKS[fw])
 
     if path and path.strip():
-        # Validate test file/dir path resides within repository
-        target_path = validate_repo_path(repo_root, path)
-        rel_path = target_path.relative_to(repo_root).as_posix()
-        cmd.append(rel_path)
+        if fw != "pytest":
+            raise SecurityError("Targeted paths are supported only for pytest")
+        cmd.append(_validate_test_target(repo_root, path))
 
     res = await execute_command_safely(
         cmd=cmd,

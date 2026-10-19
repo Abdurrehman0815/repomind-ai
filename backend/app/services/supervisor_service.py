@@ -23,6 +23,9 @@ from app.services.retrieval_service import RetrievalService
 from app.agents.codebase_analyst_agent import CodebaseAnalystAgent
 from app.agents.planner_agent import PlannerAgent
 from app.agents.changeimpact_agent import ChangeImpactAgent
+from app.agents.tool_using_agent import ToolUsingAgent
+from app.agents.code_review_agent import CodeReviewAgent
+from app.agents.test_plan_agent import TestPlanAgent
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
@@ -46,6 +49,9 @@ class SupervisorState(TypedDict):
     code_navigation_analysis: Optional[Dict[str, Any]]
     implementation_plan_analysis: Optional[Dict[str, Any]]
     changeimpact_analysis: Optional[Dict[str, Any]]
+    tool_trace: List[dict[str, Any]]
+    code_review_analysis: Optional[Dict[str, Any]]
+    test_plan_analysis: Optional[Dict[str, Any]]
 
 
 class SupervisorService:
@@ -60,6 +66,9 @@ class SupervisorService:
         self.codebase_analyst = CodebaseAnalystAgent(session)
         self.planner_agent = PlannerAgent(session)
         self.changeimpact_agent = ChangeImpactAgent(session)
+        self.tool_using_agent = ToolUsingAgent()
+        self.code_review_agent = CodeReviewAgent(session)
+        self.test_plan_agent = TestPlanAgent()
         # Build the LangGraph
         self.graph = self._build_graph()
 
@@ -69,6 +78,7 @@ class SupervisorService:
 
         # Add nodes
         workflow.add_node("classify_intent", self._classify_intent_node)
+        workflow.add_node("use_tools", self._use_tools_node)
         workflow.add_node("retrieve_context", self._retrieve_context_node)
         workflow.add_node("generate_response", self._generate_response_node)
         workflow.add_node("validate_citations", self._validate_citations_node)
@@ -76,7 +86,8 @@ class SupervisorService:
 
         # Define the flow
         workflow.set_entry_point("classify_intent")
-        workflow.add_edge("classify_intent", "retrieve_context")
+        workflow.add_edge("classify_intent", "use_tools")
+        workflow.add_edge("use_tools", "retrieve_context")
         workflow.add_edge("retrieve_context", "generate_response")
         workflow.add_edge("generate_response", "validate_citations")
         workflow.add_edge("validate_citations", "format_final_answer")
@@ -120,6 +131,18 @@ class SupervisorService:
         except Exception as exc:
             logger.error("intent_classification_failed", error=str(exc))
             return {"error": f"Intent classification failed: {str(exc)}"}
+
+    async def _use_tools_node(self, state: SupervisorState) -> Dict[str, Any]:
+        """Gather supplementary repository evidence using the MCP tool surface."""
+        if state.get("error"):
+            return {"tool_trace": state.get("tool_trace", [])}
+        return {
+            "tool_trace": await self.tool_using_agent.investigate(
+                project_id=state["project_id"],
+                query=state["user_query"],
+                intent=state["intent"],
+            )
+        }
 
     async def _retrieve_context_node(self, state: SupervisorState) -> Dict[str, Any]:
         """Retrieve relevant context from the codebase."""
@@ -169,6 +192,17 @@ class SupervisorService:
                     "retrieved_context": [],  # We'll get context from the analysis if needed
                     "changeimpact_analysis": analysis_result
                 }
+            elif state["intent"] == "code_review":
+                analysis_result = await self.code_review_agent.review(
+                    project_id=state["project_id"],
+                    session_id=state["session_id"],
+                )
+                return {"retrieved_context": [], "code_review_analysis": analysis_result}
+            elif state["intent"] == "test_plan":
+                analysis_result = await self.test_plan_agent.create_test_plan(
+                    project_id=state["project_id"], requirement=state["user_query"], session_id=state["session_id"]
+                )
+                return {"retrieved_context": [], "test_plan_analysis": analysis_result}
             else:
                 # Use standard retrieval for other intents
                 retrieved_context = await self._retrieve_context(
@@ -247,6 +281,20 @@ class SupervisorService:
                         "analysis_metadata": analysis.get("metadata", {}),
                         "analysis_type": "change_impact"
                     }
+            elif state.get("code_review_analysis"):
+                analysis = state["code_review_analysis"]
+                if state["stream"]:
+                    return {"response_generator": self._stream_analysis_result(analysis, "code_review")}
+                return {
+                    "generated_response": analysis.get("answer", ""),
+                    "analysis_metadata": analysis.get("metadata", {}),
+                    "analysis_type": "code_review"
+                }
+            elif state.get("test_plan_analysis"):
+                analysis = state["test_plan_analysis"]
+                if state["stream"]:
+                    return {"response_generator": self._stream_analysis_result(analysis, "test_plan")}
+                return {"generated_response": analysis.get("answer", ""), "analysis_metadata": analysis.get("metadata", {}), "analysis_type": "test_plan"}
             else:
                 # Use standard response generation for other intents
                 if state["stream"]:
@@ -285,6 +333,10 @@ class SupervisorService:
                 return {"citations": state["implementation_plan_analysis"]["sources"]}
             elif state.get("changeimpact_analysis") and state["changeimpact_analysis"].get("sources"):
                 return {"citations": state["changeimpact_analysis"]["sources"]}
+            elif state.get("code_review_analysis") and state["code_review_analysis"].get("sources"):
+                return {"citations": state["code_review_analysis"]["sources"]}
+            elif state.get("test_plan_analysis") and state["test_plan_analysis"].get("sources"):
+                return {"citations": state["test_plan_analysis"]["sources"]}
             else:
                 # Otherwise, validate and format citations from retrieved context
                 citations = await self._validate_and_format_citations(
@@ -637,7 +689,10 @@ You must:
             architecture_analysis=None,
             code_navigation_analysis=None,
             implementation_plan_analysis=None,
-            changeimpact_analysis=None
+            changeimpact_analysis=None,
+            tool_trace=[],
+            code_review_analysis=None,
+            test_plan_analysis=None,
         )
 
         try:
@@ -655,7 +710,8 @@ You must:
                     "message_id": user_chat_message.id,
                     "intent": final_state["intent"],
                     "stream": True,
-                    "response_generator": final_state["response_generator"]
+                    "response_generator": final_state["response_generator"],
+                    "tool_trace": final_state.get("tool_trace", []),
                 }
 
                 # Add analysis metadata if available
@@ -671,6 +727,12 @@ You must:
                 elif final_state.get("changeimpact_analysis"):
                     response_dict["analysis_metadata"] = final_state["changeimpact_analysis"].get("metadata", {})
                     response_dict["analysis_type"] = "change_impact"
+                elif final_state.get("code_review_analysis"):
+                    response_dict["analysis_metadata"] = final_state["code_review_analysis"].get("metadata", {})
+                    response_dict["analysis_type"] = "code_review"
+                elif final_state.get("test_plan_analysis"):
+                    response_dict["analysis_metadata"] = final_state["test_plan_analysis"].get("metadata", {})
+                    response_dict["analysis_type"] = "test_plan"
 
                 return response_dict
             else:
@@ -694,6 +756,14 @@ You must:
                     citations_to_store = analysis.get("sources", [])
                 elif final_state.get("changeimpact_analysis"):
                     analysis = final_state["changeimpact_analysis"]
+                    content_to_store = analysis.get("answer", "")
+                    citations_to_store = analysis.get("sources", [])
+                elif final_state.get("code_review_analysis"):
+                    analysis = final_state["code_review_analysis"]
+                    content_to_store = analysis.get("answer", "")
+                    citations_to_store = analysis.get("sources", [])
+                elif final_state.get("test_plan_analysis"):
+                    analysis = final_state["test_plan_analysis"]
                     content_to_store = analysis.get("answer", "")
                     citations_to_store = analysis.get("sources", [])
 
@@ -721,7 +791,8 @@ You must:
                     "response": final_state.get("generated_response", ""),
                     "intent": final_state["intent"],
                     "citations": final_state.get("citations", []),
-                    "stream": False
+                    "stream": False,
+                    "tool_trace": final_state.get("tool_trace", []),
                 }
 
                 # Add analysis metadata if available
@@ -737,6 +808,12 @@ You must:
                 elif final_state.get("changeimpact_analysis"):
                     response_dict["analysis_metadata"] = final_state["changeimpact_analysis"].get("metadata", {})
                     response_dict["analysis_type"] = "change_impact"
+                elif final_state.get("code_review_analysis"):
+                    response_dict["analysis_metadata"] = final_state["code_review_analysis"].get("metadata", {})
+                    response_dict["analysis_type"] = "code_review"
+                elif final_state.get("test_plan_analysis"):
+                    response_dict["analysis_metadata"] = final_state["test_plan_analysis"].get("metadata", {})
+                    response_dict["analysis_type"] = "test_plan"
 
                 return response_dict
 
