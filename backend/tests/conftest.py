@@ -3,6 +3,15 @@ RepoMind AI — Pytest Global Fixtures
 
 Provides isolated in-memory test database and mock fixtures for unit tests.
 """
+import sys
+from pathlib import Path
+
+# Ensure mcp-server is available on sys.path
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+MCP_SERVER_DIR = REPO_ROOT / "mcp-server"
+if str(MCP_SERVER_DIR) not in sys.path:
+    sys.path.insert(0, str(MCP_SERVER_DIR))
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 

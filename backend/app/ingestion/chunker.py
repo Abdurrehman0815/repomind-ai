@@ -227,9 +227,13 @@ class Chunker:
             if symbol.parent_symbol_id:
                 metadata["parent_symbol_id"] = symbol.parent_symbol_id
 
-            # Add any existing metadata from symbol
-            if hasattr(symbol, 'metadata') and symbol.metadata:
-                metadata.update(symbol.metadata)
+            # SQLAlchemy declarative models inherit ``Base.metadata``. That is
+            # a SQLAlchemy MetaData object, not per-symbol metadata, and cannot
+            # be merged into this dictionary. Only merge metadata when a model
+            # explicitly exposes a dictionary-valued attribute.
+            symbol_metadata = getattr(symbol, "metadata", None)
+            if isinstance(symbol_metadata, dict):
+                metadata.update(symbol_metadata)
 
             return CodeChunkData(
                 content=symbol_content,

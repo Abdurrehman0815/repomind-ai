@@ -39,6 +39,26 @@ class DependencyRepository:
         )
         return result.scalars().all()
 
+    async def find_by_file_ids(self, file_ids: list[str]) -> list[Dependency]:
+        """Find dependency edges originating from any supplied file."""
+        if not file_ids:
+            return []
+        result = await self.session.execute(
+            select(Dependency)
+            .where(Dependency.source_file_id.in_(file_ids))
+            .order_by(Dependency.line_number)
+        )
+        return list(result.scalars().all())
+
+    async def find_by_dependent_file_id(self, file_id: str) -> list[Dependency]:
+        """Find edges whose target is the given file (incoming dependencies)."""
+        result = await self.session.execute(
+            select(Dependency)
+            .where(Dependency.target_file_id == file_id)
+            .order_by(Dependency.line_number)
+        )
+        return list(result.scalars().all())
+
     async def create(
         self,
         project_id: str,

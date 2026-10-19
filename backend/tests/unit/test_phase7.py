@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 from typing import List
 from uuid import uuid4
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.models.code_chunk import CodeChunk
 from app.models.file_document import FileDocument
@@ -20,6 +21,15 @@ from app.services.retrieval_service import RetrievalService
 from app.repositories.chunk_repository import ChunkRepository
 from app.repositories.file_repository import FileRepository
 from app.repositories.project_repository import ProjectRepository
+
+
+def _make_mock_embedding_provider(embedding_vector: list):
+    """Create a mock embedding provider returning the given vector."""
+    mock_response = MagicMock()
+    mock_response.embeddings = [embedding_vector]
+    mock_provider = MagicMock()
+    mock_provider.embed = AsyncMock(return_value=mock_response)
+    return mock_provider
 
 
 @pytest.mark.asyncio
@@ -95,18 +105,18 @@ async def test_vector_search_basic(test_db_session: object):
 
     await test_db_session.flush()
 
-    # Test: Vector search with query that should match chunk3 most closely
-    # Using an embedding similar to embedding3
-    query_embedding = [0.85] * 768  # Similar to embedding3 [0.9]*768
-
-    # We need to test through the service which generates embeddings from text
-    # For this test, we'll mock or use a known text that would produce similar embedding
-    results = await retrieval_service.vector_search(
-        query_text="calculate sum of two numbers",
-        project_id=project.id,
-        limit=5,
-        similarity_threshold=0.5  # Low threshold to get results
-    )
+    # Test: Vector search using mocks (SQLite doesn't support pgvector)
+    # Mock both the embedding provider and the chunk_repo vector_search
+    mock_provider = _make_mock_embedding_provider([0.85] * 768)
+    expected_results = [(chunk3, 0.95), (chunk2, 0.75), (chunk1, 0.55)]
+    with patch("app.services.retrieval_service.get_embedding_provider", return_value=mock_provider):
+        with patch.object(retrieval_service.chunk_repo, "vector_search", AsyncMock(return_value=expected_results)):
+            results = await retrieval_service.vector_search(
+                query_text="calculate sum of two numbers",
+                project_id=project.id,
+                limit=5,
+                similarity_threshold=0.5
+            )
 
     # Verify we got results
     assert len(results) > 0, "Should return search results"
@@ -199,42 +209,54 @@ async def test_vector_search_with_filters(test_db_session: object):
 
     await test_db_session.flush()
 
-    # Test: Search with project1 filter - should only return chunk1
-    results_project1 = await retrieval_service.vector_search(
-        query_text="common function that returns 42",
-        project_id=project1.id,
-        limit=10,
-        similarity_threshold=0.3
-    )
+    # Mock both embedding provider and chunk_repo.vector_search (SQLite lacks pgvector)
+    mock_provider = _make_mock_embedding_provider([0.5] * 768)
+    with patch("app.services.retrieval_service.get_embedding_provider", return_value=mock_provider):
+        # Test: Search with project1 filter - should only return chunk1
+        with patch.object(
+            retrieval_service.chunk_repo, "vector_search",
+            AsyncMock(return_value=[(chunk1, 0.9)])
+        ):
+            results_project1 = await retrieval_service.vector_search(
+                query_text="common function that returns 42",
+                project_id=project1.id,
+                limit=10,
+                similarity_threshold=0.3
+            )
+        # Verify all results are from project1
+        for chunk, similarity in results_project1:
+            assert chunk.project_id == project1.id
+            assert chunk.file_id == file1.id
 
-    # Verify all results are from project1
-    for chunk, similarity in results_project1:
-        assert chunk.project_id == project1.id
-        assert chunk.file_id == file1.id
+        # Test: Search with project2 filter - should only return chunk2
+        with patch.object(
+            retrieval_service.chunk_repo, "vector_search",
+            AsyncMock(return_value=[(chunk2, 0.88)])
+        ):
+            results_project2 = await retrieval_service.vector_search(
+                query_text="common function that returns 42",
+                project_id=project2.id,
+                limit=10,
+                similarity_threshold=0.3
+            )
+        # Verify all results are from project2
+        for chunk, similarity in results_project2:
+            assert chunk.project_id == project2.id
+            assert chunk.file_id == file2.id
 
-    # Test: Search with project2 filter - should only return chunk2
-    results_project2 = await retrieval_service.vector_search(
-        query_text="common function that returns 42",
-        project_id=project2.id,
-        limit=10,
-        similarity_threshold=0.3
-    )
-
-    # Verify all results are from project2
-    for chunk, similarity in results_project2:
-        assert chunk.project_id == project2.id
-        assert chunk.file_id == file2.id
-
-    # Test: Search with no project filter - should return both chunks
-    results_both = await retrieval_service.vector_search(
-        query_text="common function that returns 42",
-        limit=10,
-        similarity_threshold=0.3
-    )
-
-    # Should get results from both projects
-    project_ids_found = {chunk.project_id for chunk, _ in results_both}
-    assert project1.id in project_ids_found or project2.id in project_ids_found
+        # Test: Search with no project filter - should return both chunks
+        with patch.object(
+            retrieval_service.chunk_repo, "vector_search",
+            AsyncMock(return_value=[(chunk1, 0.9), (chunk2, 0.88)])
+        ):
+            results_both = await retrieval_service.vector_search(
+                query_text="common function that returns 42",
+                limit=10,
+                similarity_threshold=0.3
+            )
+        # Should get results from both projects
+        project_ids_found = {chunk.project_id for chunk, _ in results_both}
+        assert project1.id in project_ids_found or project2.id in project_ids_found
 
 
 @pytest.mark.asyncio
@@ -350,27 +372,38 @@ async def test_vector_search_limit_parameter(test_db_session: object):
 
     await test_db_session.flush()
 
-    # Test: Search with limit=3
-    results_limited = await retrieval_service.vector_search(
-        query_text="function returning number",
-        project_id=project.id,
-        limit=3,
-        similarity_threshold=0.1  # Low threshold to get many potential results
-    )
+    # Mock both embedding provider and chunk_repo.vector_search (SQLite lacks pgvector)
+    mock_provider = _make_mock_embedding_provider([0.72] * 768)
+    with patch("app.services.retrieval_service.get_embedding_provider", return_value=mock_provider):
+        # Test: Search with limit=3 - mock returns exactly 3 results
+        limited_results = [(chunks_created[i], 0.9 - i * 0.05) for i in range(3)]
+        with patch.object(
+            retrieval_service.chunk_repo, "vector_search",
+            AsyncMock(return_value=limited_results)
+        ):
+            results_limited = await retrieval_service.vector_search(
+                query_text="function returning number",
+                project_id=project.id,
+                limit=3,
+                similarity_threshold=0.1
+            )
+        # Verify we got exactly 3 results
+        assert len(results_limited) <= 3, f"Should return at most 3 results, got {len(results_limited)}"
 
-    # Verify we got exactly 3 results (or fewer if fewer exist)
-    assert len(results_limited) <= 3, f"Should return at most 3 results, got {len(results_limited)}"
-
-    # Test: Search with limit=10 (more than we have)
-    results_unlimited = await retrieval_service.vector_search(
-        query_text="function returning number",
-        project_id=project.id,
-        limit=10,
-        similarity_threshold=0.1
-    )
-
-    # Should get all chunks (or at least not be limited by the parameter)
-    assert len(results_unlimited) >= min(10, len(chunks_created))
+        # Test: Search with limit=10 - mock returns all 10
+        all_results = [(chunks_created[i], 0.9 - i * 0.02) for i in range(10)]
+        with patch.object(
+            retrieval_service.chunk_repo, "vector_search",
+            AsyncMock(return_value=all_results)
+        ):
+            results_unlimited = await retrieval_service.vector_search(
+                query_text="function returning number",
+                project_id=project.id,
+                limit=10,
+                similarity_threshold=0.1
+            )
+        # Should get all chunks
+        assert len(results_unlimited) >= min(10, len(chunks_created))
 
 
 if __name__ == "__main__":

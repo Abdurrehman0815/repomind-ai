@@ -25,6 +25,7 @@ pgvector==0.3.6
 # ── AI/ML Dependencies ───────────────────────────────────
 sentence-transformers==2.2.2
 torch==2.4.0  # CPU version; will use CUDA if available
+langgraph==0.1.1
 
 # ── Logging ──────────────────────────────────────────────
 structlog==24.4.0
@@ -35,3 +36,5 @@ pytest-asyncio==0.24.0
 pytest-cov==6.0.0
 httpx==0.28.1  # used by TestClient
 anyio==4.7.0
+tiktoken
+mcp<2

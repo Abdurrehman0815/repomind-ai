@@ -437,10 +437,12 @@ Format your response as a clear, actionable implementation plan that a developer
 
         formatted = []
         for symbol in key_symbols[:10]:  # Top 10 symbols
-            formatted.append(
+            symbol_str = (
                 f"- {symbol['name']} ({symbol['kind']}) in File {symbol['file_id']}:L{symbol['line_start']}-L{symbol['line_end']}"
-                f"{f': {symbol['docstring'][:100]}...' if symbol.get('docstring') else ''}"
             )
+            if symbol.get('docstring'):
+                symbol_str += ': ' + symbol['docstring'][:100] + '...'
+            formatted.append(symbol_str)
 
         return "\n".join(formatted)
 

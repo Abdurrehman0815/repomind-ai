@@ -7,6 +7,7 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.code_symbol import CodeSymbol
+from app.models.code_chunk import CodeChunk
 
 logger = structlog.get_logger(__name__)
 
@@ -22,6 +23,29 @@ class SymbolRepository:
             select(CodeSymbol).where(CodeSymbol.id == symbol_id)
         )
         return result.scalar_one_or_none()
+
+    async def get_by_ids(self, symbol_ids: list[str]) -> list[CodeSymbol]:
+        """Return symbols matching a collection of IDs."""
+        if not symbol_ids:
+            return []
+        result = await self.session.execute(
+            select(CodeSymbol).where(CodeSymbol.id.in_(symbol_ids))
+        )
+        return list(result.scalars().all())
+
+    async def find_by_chunk_id(self, chunk_id: str) -> Sequence[CodeSymbol]:
+        """Find symbols in the source file that owns a code chunk.
+
+        Chunks currently do not store a symbol foreign key, so file-level
+        symbols are the closest reliable association available in this schema.
+        """
+        result = await self.session.execute(
+            select(CodeChunk.file_id).where(CodeChunk.id == chunk_id)
+        )
+        file_id = result.scalar_one_or_none()
+        if not file_id:
+            return []
+        return await self.list_by_file(str(file_id))
 
     async def search_by_name(
         self, project_id: str, name_query: str

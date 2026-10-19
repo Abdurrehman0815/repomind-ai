@@ -104,7 +104,7 @@ class LocalEmbeddingProvider(EmbeddingProvider):
                 except ImportError:
                     self._device = "cpu"
 
-            logger.info("Using device for embeddings", device=self._device)
+            logger.info(f"Using device for embeddings: {self._device}")
 
             # Load model
             self._model = SentenceTransformer(
@@ -117,10 +117,8 @@ class LocalEmbeddingProvider(EmbeddingProvider):
             actual_dimensions = self._model.get_sentence_embedding_dimension()
             if actual_dimensions != self._dimensions:
                 logger.warning(
-                    "Embedding dimensions mismatch",
-                    expected=self._dimensions,
-                    actual=actual_dimensions,
-                    model=self._model_name
+                    f"Embedding dimensions mismatch: expected={self._dimensions}, "
+                    f"actual={actual_dimensions}, model={self._model_name}"
                 )
                 # Update to actual dimensions
                 self._dimensions = actual_dimensions
@@ -142,7 +140,7 @@ class LocalEmbeddingProvider(EmbeddingProvider):
             await self._ensure_model_loaded()
             return self._model is not None and self._model_ready
         except Exception as e:
-            logger.warning("Embedding provider health check failed", error=str(e))
+            logger.warning(f"Embedding provider health check failed: {e}")
             return False
 
     async def embed(

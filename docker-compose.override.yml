@@ -1,0 +1,23 @@
+services:
+  backend:
+    # Configure Ollama for embedding generation.
+    environment:
+      EMBEDDING_PROVIDER: ollama
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+
+    # Mount local backend code for development and hot reload.
+    volumes:
+      - ./backend:/app
+      - workspace_data:/data/workspaces
+
+    # Automatically reload the application when Python files change.
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+      - --reload-dir
+      - /app

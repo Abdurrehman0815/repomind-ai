@@ -3,7 +3,7 @@ RepoMind AI — Citation Schema
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
 
 
@@ -24,8 +24,7 @@ class CitationCreate(CitationBase):
 
 class CitationResponse(CitationBase):
     """Citation response model."""
+    model_config = ConfigDict(from_attributes=True)
+
     is_stale: bool = Field(False, description="Whether the citation is stale due to file changes")
     repository_id: Optional[str] = Field(None, description="Project ID")
-
-    class Config:
-        orm_mode = True

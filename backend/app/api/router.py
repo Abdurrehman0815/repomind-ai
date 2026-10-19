@@ -35,7 +35,7 @@ api_router.include_router(
 )
 api_router.include_router(
     chat_router,
-    prefix="/api/v1/projects",
+    prefix="/api/v1/chat",
     tags=["chat"],
 )
 api_router.include_router(

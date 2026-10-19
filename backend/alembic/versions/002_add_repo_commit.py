@@ -1,9 +1,8 @@
 """add repository_commit column to projects table
 
-Revision ID: 002_add_repository_commit_to_projects
+Revision ID: 002_add_repo_commit
 Revises: 001_initial_schema
 Create Date: 2026-10-14 15:00:00.000000
-
 """
 from alembic import op
 import sqlalchemy as sa

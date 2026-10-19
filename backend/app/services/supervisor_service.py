@@ -22,6 +22,7 @@ from app.services.citation_service import CitationService
 from app.services.retrieval_service import RetrievalService
 from app.agents.codebase_analyst_agent import CodebaseAnalystAgent
 from app.agents.planner_agent import PlannerAgent
+from app.agents.changeimpact_agent import ChangeImpactAgent
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
@@ -40,6 +41,11 @@ class SupervisorState(TypedDict):
     stream: bool
     # For streaming response
     response_generator: Any
+    # Analysis results from specialized agents
+    architecture_analysis: Optional[Dict[str, Any]]
+    code_navigation_analysis: Optional[Dict[str, Any]]
+    implementation_plan_analysis: Optional[Dict[str, Any]]
+    changeimpact_analysis: Optional[Dict[str, Any]]
 
 
 class SupervisorService:
@@ -53,6 +59,7 @@ class SupervisorService:
         self.citation_service = CitationService(session)
         self.codebase_analyst = CodebaseAnalystAgent(session)
         self.planner_agent = PlannerAgent(session)
+        self.changeimpact_agent = ChangeImpactAgent(session)
         # Build the LangGraph
         self.graph = self._build_graph()
 
@@ -77,6 +84,8 @@ class SupervisorService:
 
         # Add error handling? We'll handle errors in each node and set error state.
         # For now, we'll let exceptions propagate and be caught by the caller.
+
+        return workflow.compile()
 
     def _stream_analysis_result(self, analysis_result: dict, analysis_type: str):
         """Stream an analysis result as chunks for streaming responses."""
@@ -103,8 +112,6 @@ class SupervisorService:
 
         return analysis_stream()
 
-        return workflow.compile()
-
     async def _classify_intent_node(self, state: SupervisorState) -> Dict[str, Any]:
         """Classify the user's intent."""
         try:
@@ -117,7 +124,7 @@ class SupervisorService:
     async def _retrieve_context_node(self, state: SupervisorState) -> Dict[str, Any]:
         """Retrieve relevant context from the codebase."""
         if state.get("error"):
-            return {}  # Skip if error already occurred
+            return {"retrieved_context": state.get("retrieved_context", [])}
         try:
             # Use specialized agents for specific intents
             if state["intent"] == "architecture_explanation":
@@ -152,6 +159,16 @@ class SupervisorService:
                     "retrieved_context": [],  # We'll get context from the analysis if needed
                     "implementation_plan_analysis": analysis_result
                 }
+            elif state["intent"] == "change_impact":
+                analysis_result = await self.changeimpact_agent.analyze_change_impact(
+                    project_id=state["project_id"],
+                    change_query=state["user_query"],
+                    session_id=state["session_id"]
+                )
+                return {
+                    "retrieved_context": [],  # We'll get context from the analysis if needed
+                    "changeimpact_analysis": analysis_result
+                }
             else:
                 # Use standard retrieval for other intents
                 retrieved_context = await self._retrieve_context(
@@ -167,7 +184,7 @@ class SupervisorService:
     async def _generate_response_node(self, state: SupervisorState) -> Dict[str, Any]:
         """Generate a response based on the user query and retrieved context."""
         if state.get("error"):
-            return {}
+            return {"generated_response": state.get("generated_response", "")}
         try:
             # Handle analysis results from specialized agents
             if state.get("architecture_analysis"):
@@ -215,6 +232,21 @@ class SupervisorService:
                         "analysis_metadata": analysis.get("metadata", {}),
                         "analysis_type": "implementation_plan"
                     }
+            elif state.get("changeimpact_analysis"):
+                analysis = state["changeimpact_analysis"]
+                if state["stream"]:
+                    # For streaming, convert the analysis to a stream
+                    response_generator = self._stream_analysis_result(
+                        analysis_result=analysis,
+                        analysis_type="change_impact"
+                    )
+                    return {"response_generator": response_generator}
+                else:
+                    return {
+                        "generated_response": analysis.get("answer", ""),
+                        "analysis_metadata": analysis.get("metadata", {}),
+                        "analysis_type": "change_impact"
+                    }
             else:
                 # Use standard response generation for other intents
                 if state["stream"]:
@@ -239,10 +271,10 @@ class SupervisorService:
     async def _validate_citations_node(self, state: SupervisorState) -> Dict[str, Any]:
         """Validate and format citations from retrieved context or analysis results."""
         if state.get("error"):
-            return {}
-        # Skip citation validation for streaming? We'll do it for non-streaming for now.
+            return {"citations": state.get("citations", [])}
+        # Streaming responses do not run the non-streaming citation pipeline.
         if state["stream"]:
-            return {}
+            return {"citations": state.get("citations", [])}
         try:
             # If we have analysis results with existing citations, use those
             if state.get("architecture_analysis") and state["architecture_analysis"].get("sources"):
@@ -251,6 +283,8 @@ class SupervisorService:
                 return {"citations": state["code_navigation_analysis"]["sources"]}
             elif state.get("implementation_plan_analysis") and state["implementation_plan_analysis"].get("sources"):
                 return {"citations": state["implementation_plan_analysis"]["sources"]}
+            elif state.get("changeimpact_analysis") and state["changeimpact_analysis"].get("sources"):
+                return {"citations": state["changeimpact_analysis"]["sources"]}
             else:
                 # Otherwise, validate and format citations from retrieved context
                 citations = await self._validate_and_format_citations(
@@ -265,37 +299,37 @@ class SupervisorService:
     async def _format_final_answer_node(self, state: SupervisorState) -> Dict[str, Any]:
         """Format the final answer for non-streaming responses."""
         if state.get("error"):
-            return {}
-        if state["stream"]:
-            # For streaming, the response is handled by the generator
-            return {}
-        # For non-streaming responses from analysis, we may need to store the assistant message
-        # The actual response content and citations are already set in generate_response and validate_citations nodes
-        # We just need to return empty dict to continue the flow
-        return {}
+            return {"generated_response": state.get("generated_response", "")}
+        # Explicitly write a state field so LangGraph never receives an empty update.
+        return {"generated_response": state.get("generated_response", "")}
 
     # Helper methods that reuse existing logic from ChatService
     async def _classify_intent(self, user_message: str) -> str:
-        """Classify the user's intent (same as ChatService._classify_intent)."""
+        """Classify intent with specific change-impact requests taking priority."""
         message_lower = user_message.lower()
 
-        # Simple keyword-based intent classification
-        if any(word in message_lower for word in ["where", "location", "file", "function", "class", "method"]):
-            return "code_navigation"
-        elif any(word in message_lower for word in ["explain", "how", "what", "why", "architecture", "flow"]):
-            return "architecture_explanation"
-        elif any(word in message_lower for word in ["plan", "planning", "implement", "implementation", "build", "create"]):
-            return "implementation_plan"
-        elif any(word in message_lower for word in ["change", "impact", "modify", "add", "remove"]):
+        change_phrases = (
+            "change impact", "impact analysis", "affected files",
+            "downstream dependencies", "regression risk", "modify",
+            "add ", "remove ", "change ", "alter ", "require mfa",
+            "authentication flow", "what would be affected",
+        )
+        if any(phrase in message_lower for phrase in change_phrases):
             return "change_impact"
-        elif any(word in message_lower for word in ["test", "testing", "test plan"]):
-            return "test_plan"
-        elif any(word in message_lower for word in ["review", "diff", "pull request", "pr"]):
+
+        if any(word in message_lower for word in ("review", "diff", "pull request", "code review")):
             return "code_review"
-        elif any(word in message_lower for word in ["debug", "error", "bug", "issue", "problem"]):
+        if any(word in message_lower for word in ("test plan", "testing strategy", "regression tests")):
+            return "test_plan"
+        if any(word in message_lower for word in ("debug", "error", "bug", "issue", "problem")):
             return "debugging"
-        else:
-            return "general_question"
+        if any(word in message_lower for word in ("plan", "planning", "implement", "implementation", "build", "create")):
+            return "implementation_plan"
+        if any(word in message_lower for word in ("where", "location", "file", "function", "class", "method")):
+            return "code_navigation"
+        if any(word in message_lower for word in ("explain", "how", "what", "why", "architecture", "flow")):
+            return "architecture_explanation"
+        return "general_question"
 
     async def _retrieve_context(
         self,
@@ -497,7 +531,7 @@ You must:
         citations = []
 
         # Get project path for validation
-        project = await self.project_repo.get(project_id)
+        project = await self.project_repo.get_by_id(project_id)
         project_path = project.path if project else None
 
         for i, (chunk, score) in enumerate(retrieved_context[:3]):  # Top 3 chunks for citations
@@ -599,7 +633,11 @@ You must:
             citations=[],
             error=None,
             stream=stream,
-            response_generator=None
+            response_generator=None,
+            architecture_analysis=None,
+            code_navigation_analysis=None,
+            implementation_plan_analysis=None,
+            changeimpact_analysis=None
         )
 
         try:
@@ -627,6 +665,12 @@ You must:
                 elif final_state.get("code_navigation_analysis"):
                     response_dict["analysis_metadata"] = final_state["code_navigation_analysis"].get("metadata", {})
                     response_dict["analysis_type"] = "code_navigation"
+                elif final_state.get("implementation_plan_analysis"):
+                    response_dict["analysis_metadata"] = final_state["implementation_plan_analysis"].get("metadata", {})
+                    response_dict["analysis_type"] = "implementation_plan"
+                elif final_state.get("changeimpact_analysis"):
+                    response_dict["analysis_metadata"] = final_state["changeimpact_analysis"].get("metadata", {})
+                    response_dict["analysis_type"] = "change_impact"
 
                 return response_dict
             else:
@@ -646,6 +690,10 @@ You must:
                     citations_to_store = analysis.get("sources", [])
                 elif final_state.get("implementation_plan_analysis"):
                     analysis = final_state["implementation_plan_analysis"]
+                    content_to_store = analysis.get("answer", "")
+                    citations_to_store = analysis.get("sources", [])
+                elif final_state.get("changeimpact_analysis"):
+                    analysis = final_state["changeimpact_analysis"]
                     content_to_store = analysis.get("answer", "")
                     citations_to_store = analysis.get("sources", [])
 
@@ -686,6 +734,9 @@ You must:
                 elif final_state.get("implementation_plan_analysis"):
                     response_dict["analysis_metadata"] = final_state["implementation_plan_analysis"].get("metadata", {})
                     response_dict["analysis_type"] = "implementation_plan"
+                elif final_state.get("changeimpact_analysis"):
+                    response_dict["analysis_metadata"] = final_state["changeimpact_analysis"].get("metadata", {})
+                    response_dict["analysis_type"] = "change_impact"
 
                 return response_dict
 

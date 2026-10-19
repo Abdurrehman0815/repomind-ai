@@ -108,8 +108,7 @@ async def hybrid_search(
     try:
         results = await service.hybrid_search(
             query_text=q,
-            project_id=project_id,
-            repository_id=repository_id,
+            project_id=project_id or repository_id,
             file_id=file_id,
             language=language,
             limit=limit,

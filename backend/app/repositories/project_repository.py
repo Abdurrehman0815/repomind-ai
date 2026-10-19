@@ -23,6 +23,10 @@ class ProjectRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get(self, project_id: str) -> Project | None:
+        """Backward-compatible alias used by agents and services."""
+        return await self.get_by_id(project_id)
+
     async def get_by_path(self, path: str) -> Project | None:
         result = await self.session.execute(
             select(Project).where(Project.path == path)

@@ -20,8 +20,8 @@
 | 13 | Codebase Analyst Agent | ✅ COMPLETE | 2026-10-16 |
 | 14 | Dependency Graph | ✅ COMPLETE | 2026-10-16 |
 | 15 | Implementation Planner Agent | ✅ COMPLETE | 2026-10-16 |
-| 16 | Change Impact Analysis | ⏳ PENDING | — |
-| 17 | MCP Server | ⏳ PENDING | — |
+| 16 | Change Impact Analysis | ✅ COMPLETE | 2026-10-17 |
+| 17 | MCP Server | ✅ COMPLETE | 2026-10-19 |
 | 18 | Tool-Using Agent | ⏳ PENDING | — |
 | 19 | Safe Test Execution | ⏳ PENDING | — |
 | 20 | Code Review Agent | ⏳ PENDING | — |
@@ -268,7 +268,6 @@
 - [x] Created RetrievalService in `backend/app/services/retrieval_service.py` with vector search capabilities
 - [x] Added vector_search method to ChunkRepository in `backend/app/repositories/chunk_repository.py` using pgvector cosine similarity
 - [x] Implemented vector search API endpoint in `backend/app/api/v1/retrieval.py` with project/file filtering and similarity threshold
-- [x] Added hybrid search endpoint (delegating to vector search for Phase 7, with notes about full hybrid implementation in Phase 8)
 - [x] Added chunk retrieval endpoints for getting chunks by ID and listing project chunks
 - [x] Integrated with existing EmbeddingProvider abstraction for query text embedding generation
 - [x] Updated main API router in `backend/app/api/router.py` to include retrieval endpoints
@@ -499,6 +498,7 @@
 ✅ PHASE 14 ACCEPTED
 
 ---
+
 ## Phase 15 — Implementation Planner Agent
 
 **Status:** ✅ COMPLETE  
@@ -520,5 +520,85 @@
 
 ### Acceptance Status
 ✅ PHASE 15 ACCEPTED
+
+---
+
+## Phase 16 — Change Impact Analysis
+
+**Status:** ✅ COMPLETE  
+**Date:** 2026-10-17
+
+### Implemented
+- [x] Created ChangeImpactAgent specialized for change impact analysis
+- [x] Integrated ChangeImpactAgent with LangGraph supervisor for intelligent routing
+- [x] Implemented change query analysis and context retrieval using hybrid search (RAG)
+- [x] Implemented symbol and file extraction from retrieved context
+- [x] Implemented dependency graph analysis to find related files and dependencies
+- [x] Implemented affected files identification based on change type and dependency relationships
+- [x] Implemented impact summary generation with confidence and risk assessment
+- [x] Implemented citation validation and formatting for change impact analysis
+- [x] Added "change_impact" intent classification for change impact requests
+- [x] Updated supervisor service to route change_impact intents to ChangeImpactAgent
+- [x] Ensured analysis is evidence-based and does not invent files or dependencies
+
+### Acceptance Status
+✅ PHASE 16 ACCEPTED
+
+---
+
+## Phase 17 — MCP Server
+
+**Status:** ✅ COMPLETE  
+**Date:** 2026-10-19
+
+### Implemented
+- [x] Dedicated RepoMind FastMCP server (`mcp-server/app/server.py`) exposing 10 standardized Model Context Protocol tools:
+  - `repo_list_files`: Safely explores repository files respecting `.gitignore`, sensitive exclusions, and directory boundaries
+  - `repo_read_file`: Reads file content with optional 1-indexed `start_line` / `end_line` slicing
+  - `repo_search`: Interoperable hybrid semantic vector + keyword code search via internal `RetrievalService`
+  - `repo_get_symbols`: Queries extracted AST code symbols and hierarchy via internal `SymbolRepository`
+  - `repo_get_dependencies`: Queries project and file module dependencies via internal `DependencyRepository`
+  - `git_status`: Safe, allowlisted Git working tree status inspection
+  - `git_diff`: Safe, allowlisted Git diff (unstaged/staged, optional file filter)
+  - `git_log`: Safe, allowlisted Git commit history inspection with bounded count
+  - `run_tests`: Sandboxed test runner with strict allowlist (`pytest`, `npm_test`)
+  - `run_linter`: Sandboxed linter runner with strict allowlist (`ruff`, `mypy`, `npm_lint`)
+- [x] Security layer (`mcp-server/app/security.py` & `backend/app/security/__init__.py`):
+  - Path traversal defense (`validate_repo_path`) blocking `../` escapes and absolute paths
+  - Sensitive files protection (`is_sensitive_path`) strictly excluding `.env*`, `*.key`, `*.pem`, `id_rsa*`, `credentials*`, etc.
+  - Subprocess command safety (`execute_command_safely`) enforcing `shell=False`, execution timeouts (hard termination), and 50,000-character output caps
+- [x] Integrated architecture calling internal backend service and repository layers without duplicating business logic
+- [x] Python namespace package inter-compatibility via `pkgutil.extend_path`
+- [x] Unit test suite (`backend/tests/unit/test_phase17.py` and `mcp-server/tests/test_phase17.py`) covering all 10 tools, schema validation, security defenses, timeouts, and FastMCP tool registration
+
+### Tests Passed (27/27 Phase 17, 122/122 Cumulative)
+- [x] Sensitive file pattern detection and blocking
+- [x] Repository path validation and directory boundary checks
+- [x] Path traversal rejection (`../../` escape attempts)
+- [x] Absolute path rejection
+- [x] Subprocess execution timeout and hard kill
+- [x] Output character truncation capping
+- [x] `repo_list_files` basic traversal, gitignore adherence, and sensitive file exclusion
+- [x] `repo_list_files` path traversal defense
+- [x] `repo_read_file` full content retrieval
+- [x] `repo_read_file` line range slicing
+- [x] `repo_read_file` sensitive file access rejection
+- [x] `repo_read_file` invalid line range validation
+- [x] `repo_search` hybrid retrieval and result formatting
+- [x] `repo_get_symbols` symbol retrieval and kind/file filtering
+- [x] `repo_get_dependencies` dependency graph inspection
+- [x] `git_status` execution safety and formatting
+- [x] `git_diff` execution safety, staged flag, and file filtering
+- [x] `git_diff` path traversal rejection
+- [x] `git_log` execution safety and count clamping
+- [x] `run_tests` allowlisted test framework execution
+- [x] `run_tests` disallowed command rejection
+- [x] `run_linter` allowlisted linter execution
+- [x] `run_linter` disallowed linter rejection
+- [x] FastMCP server registers all 10 tools
+- [x] FastMCP tool execution via tool manager
+
+### Acceptance Status
+✅ PHASE 17 ACCEPTED
 
 ---

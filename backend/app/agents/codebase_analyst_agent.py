@@ -587,7 +587,7 @@ Please provide clear guidance on where to find the requested code elements. Incl
         for symbol in key_symbols[:10]:  # Top 10 symbols
             formatted.append(
                 f"- {symbol['name']} ({symbol['kind']}) in File {symbol['file_id']}:L{symbol['line_start']}-L{symbol['line_end']}"
-                f"{f': {symbol['docstring'][:100]}...' if symbol.get('docstring') else ''}"
+                f"{(': ' + symbol['docstring'][:100] + '...') if symbol.get('docstring') else ''}"
             )
 
         return "\n".join(formatted)
@@ -614,10 +614,12 @@ Please provide clear guidance on where to find the requested code elements. Incl
 
         formatted = []
         for i, location in enumerate(locations[:10]):  # Top 10 locations
-            formatted.append(
+            location_str = (
                 f"{i+1}. File {location.get('file_path', 'unknown')}:L{location.get('start_line', '?')}-L{location.get('end_line', '?')}"
-                f"{f' - {location.get('description', '')}' if location.get('description') else ''}"
             )
+            if location.get('description'):
+                location_str += ' - ' + location.get('description', '')
+            formatted.append(location_str)
 
         return "\n".join(formatted)
 

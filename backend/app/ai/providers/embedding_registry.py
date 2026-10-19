@@ -15,32 +15,43 @@ def get_embedding_provider() -> EmbeddingProvider:
     """
     Return the configured embedding provider instance.
 
-    The provider is selected based on the EMBEDDING_PROVIDER environment variable.
+    The provider is selected using the EMBEDDING_PROVIDER environment variable.
 
-    Supported values:
-        - 'local'  → LocalEmbeddingProvider (available from Phase 6)
-        - 'bedrock' → BedrockEmbeddingProvider (available from Phase 32+)
+    Supported providers:
+        - ollama: Uses Ollama's embedding API.
+        - local: Uses Sentence Transformers.
+        - bedrock: Reserved for a future implementation.
 
-    The rest of the application must call this function, never instantiate
-    providers directly.
+    Other parts of the application should call this function instead
+    of instantiating providers directly.
     """
     settings = get_settings()
 
-    if settings.embedding_provider == "local":
+    if settings.embedding_provider == "ollama":
+        from app.ai.providers.ollama_embedding import OllamaEmbeddingProvider
+
+        return OllamaEmbeddingProvider(
+            model_name=settings.embedding_model,
+            dimensions=settings.embedding_dimensions,
+        )
+
+    elif settings.embedding_provider == "local":
         from app.ai.providers.local_embedding import LocalEmbeddingProvider
+
         return LocalEmbeddingProvider(
             model_name=settings.embedding_model,
-            dimensions=settings.embedding_dimensions
+            dimensions=settings.embedding_dimensions,
         )
+
     elif settings.embedding_provider == "bedrock":
-        # Bedrock embedding implementation is added in Phase 32.
-        # Do not implement or import before all local phases pass.
         raise NotImplementedError(
             "Amazon Bedrock embedding provider is not yet implemented. "
-            "Set EMBEDDING_PROVIDER=local for local operation."
+            "Set EMBEDDING_PROVIDER=ollama for local Ollama operation."
         )
+
     else:
         raise ValueError(
             f"Unknown embedding provider: '{settings.embedding_provider}'. "
-            f"Supported values: 'local' (and 'bedrock' in Phase 32+)."
+            "Supported values: 'ollama', 'local', and 'bedrock' "
+            "(bedrock is not implemented yet)."
         )
