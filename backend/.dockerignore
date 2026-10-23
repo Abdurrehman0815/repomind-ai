@@ -1,0 +1,22 @@
+# Python environments and generated files
+venv/
+.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Test and tool artifacts
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+tests/
+
+# Local configuration and logs
+.env
+.env.*
+*.log
+
+# Source-control metadata
+.git/

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import re
+from urllib.parse import urlparse
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +44,17 @@ DISALLOWED_ROOTS = {
 
 class RepositoryValidationError(Exception):
     """Raised when repository path or parameters are invalid or dangerous."""
+
+
+def validate_github_url(value: str) -> tuple[str, str]:
+    """Allow only public github.com HTTPS repository URLs without credentials."""
+    parsed = urlparse(value.strip())
+    if parsed.scheme != "https" or parsed.hostname != "github.com" or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise RepositoryValidationError("Only public https://github.com/owner/repository URLs are supported.")
+    parts = [part for part in parsed.path.strip("/").split("/") if part]
+    if len(parts) != 2 or not all(re.fullmatch(r"[A-Za-z0-9_.-]+", part) for part in parts):
+        raise RepositoryValidationError("GitHub URL must be https://github.com/owner/repository.")
+    return parts[0], parts[1].removesuffix(".git")
 
 
 class IngestionSummary:
@@ -138,6 +151,26 @@ class IngestionService:
             logger.error("error_getting_repository_commit", error=str(e))
             return None
 
+    def clone_github_repository(self, url: str) -> Path:
+        """Clone a public GitHub repository into the managed local workspace."""
+        owner, repository = validate_github_url(url)
+        root = Path(self.settings.workspace_root).resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        target = root / "github" / f"{owner}--{repository}"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists() and (target / ".git").is_dir():
+            result = subprocess.run(["git", "fetch", "--depth", "1", "origin"], cwd=target, capture_output=True, text=True, timeout=60)
+            if result.returncode != 0:
+                raise RepositoryValidationError("Unable to update the existing GitHub clone.")
+            subprocess.run(["git", "reset", "--hard", "origin/HEAD"], cwd=target, capture_output=True, text=True, timeout=30)
+        elif target.exists():
+            raise RepositoryValidationError("Managed clone target exists but is not a Git repository.")
+        else:
+            result = subprocess.run(["git", "clone", "--depth", "1", "--", url, str(target)], capture_output=True, text=True, timeout=120)
+            if result.returncode != 0:
+                raise RepositoryValidationError("Unable to clone the public GitHub repository.")
+        return target
+
     async def import_repository(
         self,
         path: str,
@@ -147,7 +180,7 @@ class IngestionService:
         """
         Validate path, register/find project, and perform initial file scan.
         """
-        validated_path = validate_repository_path(path)
+        validated_path = self.clone_github_repository(path) if path.strip().startswith(("http://", "https://")) else validate_repository_path(path)
         canonical_path_str = str(validated_path)
         project_name = name.strip() if name and name.strip() else validated_path.name
 

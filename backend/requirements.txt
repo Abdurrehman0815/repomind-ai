@@ -24,7 +24,8 @@ pgvector==0.3.6
 
 # ── AI/ML Dependencies ───────────────────────────────────
 sentence-transformers==2.2.2
-torch==2.4.0  # CPU version; will use CUDA if available
+# The Dockerfile installs this exact version from PyTorch's CPU-only wheel index.
+torch==2.4.0
 langgraph==0.1.1
 
 # ── Logging ──────────────────────────────────────────────

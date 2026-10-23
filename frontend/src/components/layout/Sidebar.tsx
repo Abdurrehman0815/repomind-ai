@@ -6,12 +6,18 @@ import {
   BarChart3,
   Settings,
   Brain,
+  FileCode2, GitPullRequest, ListChecks, Route, ClipboardCheck,
 } from 'lucide-react'
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/projects', icon: FolderGit2, label: 'Projects' },
   { to: '/chat', icon: MessageSquare, label: 'Chat' },
+  { to: '/repository', icon: FileCode2, label: 'Repository' },
+  { to: '/review', icon: GitPullRequest, label: 'Code Review' },
+  { to: '/plan', icon: ListChecks, label: 'Implementation Plan' },
+  { to: '/tests', icon: ClipboardCheck, label: 'Test Plan' },
+  { to: '/trace', icon: Route, label: 'Agent Trace' },
   { to: '/evaluations', icon: BarChart3, label: 'Evaluations' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]

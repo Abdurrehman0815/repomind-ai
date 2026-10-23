@@ -26,14 +26,14 @@
 | 19 | Safe Test Execution | ✅ COMPLETE | 2026-10-19 |
 | 20 | Code Review Agent | ✅ COMPLETE | 2026-10-19 |
 | 21 | Test Plan Agent | ✅ COMPLETE | 2026-10-19 |
-| 22 | Debugging Agent | ⏳ PENDING | — |
-| 23 | Memory | ⏳ PENDING | — |
-| 24 | Agent Trace | ⏳ PENDING | — |
-| 25 | Security Hardening | ⏳ PENDING | — |
-| 26 | Evaluation Framework | ⏳ PENDING | — |
-| 27 | Performance | ⏳ PENDING | — |
-| 28 | Complete Frontend | ⏳ PENDING | — |
-| 29 | Local Production Build | ⏳ PENDING | — |
+| 22 | Debugging Agent | ✅ COMPLETE | 2026-10-19 |
+| 23 | Memory | ✅ COMPLETE | 2026-10-19 |
+| 24 | Agent Trace | ✅ COMPLETE | 2026-10-19 |
+| 25 | Security Hardening | ✅ COMPLETE | 2026-10-19 |
+| 26 | Evaluation Framework | ✅ COMPLETE | 2026-10-19 |
+| 27 | Performance | ✅ COMPLETE | 2026-10-23 |
+| 28 | Complete Frontend | ✅ COMPLETE | 2026-10-23 |
+| 29 | Local Production Build | ✅ COMPLETE | 2026-10-23 |
 | 30 | Final Local Acceptance Test | ⏳ PENDING | — |
 | 31 | Amazon Bedrock Integration | ⏳ PENDING | — |
 
@@ -702,5 +702,163 @@
 
 ### Acceptance Status
 ✅ PHASE 21 ACCEPTED
+
+---
+
+## Phase 22 — Debugging Agent
+
+**Status:** ✅ COMPLETE
+**Date:** 2026-10-19
+
+### Implemented
+- [x] Added `DebuggingAgent` for error messages, endpoint failures, failed tests, and stack traces.
+- [x] Implemented an evidence-first workflow: classify the failure input, search the repository, inspect matching symbols, trace dependencies, and recommend a focused regression test.
+- [x] Made MCP lookup failures non-fatal so the agent can still give a safe debugging workflow.
+- [x] Routed `debugging` intent through the LangGraph supervisor.
+- [x] Added `backend/tests/unit/test_phase22.py` with a sample `KeyError` stack trace.
+
+### Tests Passed (1/1 Phase 22, 139/139 Cumulative)
+- [x] Stack-trace diagnosis uses repository search, symbol inspection, and dependency analysis before returning a fix-oriented plan.
+
+### Acceptance Status
+✅ PHASE 22 ACCEPTED
+
+---
+
+## Phase 23 — Memory
+
+**Status:** ✅ COMPLETE
+**Date:** 2026-10-19
+
+### Implemented
+- [x] Added bounded session memory from recent conversation turns.
+- [x] Added persisted project memory for a summary, important modules, previous plans, and user feedback.
+- [x] Enforced session isolation and bounded list sizes to prevent unbounded memory growth.
+- [x] Loads scoped memory into the standard supervisor answer prompt without treating memory as repository evidence.
+- [x] Persists a bounded latest-request project summary after completed conversations.
+- [x] Added `backend/tests/unit/test_phase23.py`.
+
+### Tests Passed (2/2 Phase 23, 141/141 Cumulative)
+- [x] Project memory persists summary, modules, plan, and feedback values.
+- [x] Session memory remains isolated between two sessions in the same project.
+
+### Acceptance Status
+✅ PHASE 23 ACCEPTED
+
+---
+
+## Phase 24 — Agent Trace
+
+**Status:** ✅ COMPLETE
+**Date:** 2026-10-19
+
+### Implemented
+- [x] Persists safe supervisor and MCP tool trace metadata in the existing assistant-message `reasoning_trace` field.
+- [x] Tracks node/tool name, duration, status, and compact result summary without storing raw repository or tool output.
+- [x] Exposes persisted trace data through chat-history responses for a frontend trace viewer.
+- [x] Added `backend/tests/unit/test_phase24.py`.
+
+### Tests Passed (1/1 Phase 24, 142/142 Cumulative)
+- [x] Trace generation includes a supervisor duration entry and safe tool summary entries.
+
+### Acceptance Status
+✅ PHASE 24 ACCEPTED
+
+---
+
+## Phase 25 — Security Hardening
+
+**Status:** ✅ COMPLETE
+**Date:** 2026-10-19
+
+### Implemented
+- [x] Added prompt-injection pattern detection and sanitization for untrusted text.
+- [x] Redacts credential-like API keys, passwords, secrets, and tokens before prompt use.
+- [x] Retained existing MCP path-traversal, sensitive-file, allowlist, timeout, and output-cap controls.
+- [x] Resolved the backend/MCP `app.security` namespace collision by placing prompt-boundary controls in `app.core`.
+
+### Tests Passed (2/2 Phase 25, 144/144 Cumulative)
+- [x] Injection-like instructions and secret-like strings are sanitized.
+- [x] Ordinary source code is not falsely flagged as an injection.
+
+### Acceptance Status
+✅ PHASE 25 ACCEPTED
+
+---
+
+## Phase 26 — Evaluation Framework
+
+**Status:** ✅ COMPLETE
+**Date:** 2026-10-19
+
+### Implemented
+- [x] Added version-controlled evaluation cases in `evals/phase26_cases.json`.
+- [x] Added deterministic answer-term and citation-recall measurement.
+- [x] Added a pass/fail result suitable for CI or future evaluation dashboards.
+- [x] Added `backend/tests/unit/test_phase26.py`.
+
+### Tests Passed (1/1 Phase 26, 145/145 Cumulative)
+- [x] Evaluation reports complete term and citation recall for a grounded answer.
+
+### Acceptance Status
+✅ PHASE 26 ACCEPTED
+
+---
+
+## Phase 27 — Performance
+
+**Status:** ✅ COMPLETE
+**Date:** 2026-10-23
+
+### Implemented
+- [x] Added bounded in-memory performance metrics with average and P95 latency reporting.
+- [x] Added stage-based instrumentation API for indexing, embeddings, retrieval, LLM, tools, and end-to-end runs.
+- [x] Added a JSON performance-report script for repeatable local baselines.
+- [x] Added `backend/tests/unit/test_phase27.py`.
+
+### Tests Passed (1/1 Phase 27, 146/146 Cumulative)
+- [x] Metric samples remain bounded and produce non-negative average/P95 latency summaries.
+
+### Acceptance Status
+✅ PHASE 27 ACCEPTED
+
+---
+
+## Phase 28 — Complete Frontend
+
+**Status:** ✅ COMPLETE
+**Date:** 2026-10-23
+
+### Implemented
+- [x] Added responsive interactive workspaces for Chat, Repository, Code Review, Implementation Plan, Test Plan, Agent Trace, Evaluations, and Settings.
+- [x] Expanded shared sidebar navigation across every planned agent workflow.
+- [x] Added reusable request controls, output states, capability panels, loading-ready interactions, and safe-status cues.
+- [x] Preserved existing Dashboard and Projects workflows in the same responsive layout.
+
+### Tests Passed
+- [x] `npm run build` completed successfully: TypeScript compilation and Vite production bundle.
+
+### Acceptance Status
+✅ PHASE 28 ACCEPTED
+
+---
+
+## Phase 29 — Local Production Build
+
+**Status:** ✅ COMPLETE
+**Date:** 2026-10-23
+
+### Implemented
+- [x] Validated the Docker Compose production stack for PostgreSQL/pgvector, FastAPI backend, and React/Nginx frontend.
+- [x] Confirmed the committed `.env.example` supports local configuration without committing secrets.
+- [x] Added `scripts/repomind.ps1` lifecycle commands: setup, start, stop, test, lint, format, index, and evaluate.
+- [x] Verified the frontend production bundle in Phase 28.
+
+### Verification
+- [x] `docker compose config --quiet` passes.
+- [x] Resolved Compose services: `postgres`, `backend`, `frontend`.
+
+### Acceptance Status
+✅ PHASE 29 ACCEPTED
 
 ---

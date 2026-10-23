@@ -12,7 +12,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy requirements first for layer caching
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# RepoMind runs local sentence-transformer embeddings on CPU. Install the
+# CPU-only PyTorch wheel before the remaining dependencies so Docker does not
+# fetch a CUDA-enabled PyPI wheel and its unnecessary GPU runtime packages.
+RUN pip install --no-cache-dir \
+      --index-url https://download.pytorch.org/whl/cpu \
+      --extra-index-url https://pypi.org/simple \
+      torch==2.4.0 \
+    && pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .

@@ -219,3 +219,6 @@ async def execute_command_safely(
         }
 
 __path__ = __import__("pkgutil").extend_path(__path__, __name__)
+from .prompt_safety import is_suspicious_instruction, sanitize_untrusted_text
+
+__all__ = ["is_suspicious_instruction", "sanitize_untrusted_text"]

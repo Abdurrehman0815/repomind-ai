@@ -1,0 +1,13 @@
+# Dependencies and generated frontend files
+node_modules/
+dist/
+.vite/
+coverage/
+
+# Local configuration and logs
+.env
+.env.*
+*.log
+
+# Source-control metadata
+.git/

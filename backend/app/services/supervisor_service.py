@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any, List, Optional, Dict, Tuple
 from uuid import UUID
 import structlog
+import time
 
 from langgraph.graph import StateGraph, END
 from typing_extensions import TypedDict
@@ -26,6 +27,8 @@ from app.agents.changeimpact_agent import ChangeImpactAgent
 from app.agents.tool_using_agent import ToolUsingAgent
 from app.agents.code_review_agent import CodeReviewAgent
 from app.agents.test_plan_agent import TestPlanAgent
+from app.agents.debugging_agent import DebuggingAgent
+from app.services.memory_service import MemoryService
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
@@ -52,6 +55,8 @@ class SupervisorState(TypedDict):
     tool_trace: List[dict[str, Any]]
     code_review_analysis: Optional[Dict[str, Any]]
     test_plan_analysis: Optional[Dict[str, Any]]
+    debugging_analysis: Optional[Dict[str, Any]]
+    memory_context: str
 
 
 class SupervisorService:
@@ -69,6 +74,8 @@ class SupervisorService:
         self.tool_using_agent = ToolUsingAgent()
         self.code_review_agent = CodeReviewAgent(session)
         self.test_plan_agent = TestPlanAgent()
+        self.debugging_agent = DebuggingAgent()
+        self.memory_service = MemoryService(session)
         # Build the LangGraph
         self.graph = self._build_graph()
 
@@ -203,6 +210,11 @@ class SupervisorService:
                     project_id=state["project_id"], requirement=state["user_query"], session_id=state["session_id"]
                 )
                 return {"retrieved_context": [], "test_plan_analysis": analysis_result}
+            elif state["intent"] == "debugging":
+                analysis_result = await self.debugging_agent.diagnose(
+                    project_id=state["project_id"], problem=state["user_query"], session_id=state["session_id"]
+                )
+                return {"retrieved_context": [], "debugging_analysis": analysis_result}
             else:
                 # Use standard retrieval for other intents
                 retrieved_context = await self._retrieve_context(
@@ -295,6 +307,11 @@ class SupervisorService:
                 if state["stream"]:
                     return {"response_generator": self._stream_analysis_result(analysis, "test_plan")}
                 return {"generated_response": analysis.get("answer", ""), "analysis_metadata": analysis.get("metadata", {}), "analysis_type": "test_plan"}
+            elif state.get("debugging_analysis"):
+                analysis = state["debugging_analysis"]
+                if state["stream"]:
+                    return {"response_generator": self._stream_analysis_result(analysis, "debugging")}
+                return {"generated_response": analysis.get("answer", ""), "analysis_metadata": analysis.get("metadata", {}), "analysis_type": "debugging"}
             else:
                 # Use standard response generation for other intents
                 if state["stream"]:
@@ -302,14 +319,14 @@ class SupervisorService:
                     response_generator = self._generate_streaming_response(
                         user_message=state["user_query"],
                         retrieved_context=state["retrieved_context"],
-                        intent=state["intent"]
+                        intent=state["intent"], memory_context=state.get("memory_context", "")
                     )
                     return {"response_generator": response_generator}
                 else:
                     response_content = await self._generate_response(
                         user_message=state["user_query"],
                         retrieved_context=state["retrieved_context"],
-                        intent=state["intent"]
+                        intent=state["intent"], memory_context=state.get("memory_context", "")
                     )
                     return {"generated_response": response_content}
         except Exception as exc:
@@ -337,6 +354,8 @@ class SupervisorService:
                 return {"citations": state["code_review_analysis"]["sources"]}
             elif state.get("test_plan_analysis") and state["test_plan_analysis"].get("sources"):
                 return {"citations": state["test_plan_analysis"]["sources"]}
+            elif state.get("debugging_analysis") and state["debugging_analysis"].get("sources"):
+                return {"citations": state["debugging_analysis"]["sources"]}
             else:
                 # Otherwise, validate and format citations from retrieved context
                 citations = await self._validate_and_format_citations(
@@ -423,7 +442,8 @@ class SupervisorService:
         self,
         user_message: str,
         retrieved_context: List[Tuple[Any, float]],
-        intent: str
+        intent: str,
+        memory_context: str = ""
     ) -> str:
         """Generate a response based on the user message and retrieved context (same as ChatService._generate_response)."""
         # Format the context for the LLM
@@ -446,6 +466,9 @@ class SupervisorService:
 
 Context from codebase:
 {context_text}
+
+Relevant scoped conversation and project memory:
+{memory_context or "No prior memory available."}
 
 User question: {user_message}
 
@@ -474,7 +497,8 @@ Please provide a concise, accurate answer based only on the provided context. If
         self,
         user_message: str,
         retrieved_context: List[Tuple[Any, float]],
-        intent: str
+        intent: str,
+        memory_context: str = ""
     ):
         """Generate a streaming response (same as ChatService._generate_streaming_response)."""
         # Format the context for the LLM
@@ -502,6 +526,9 @@ Please provide a concise, accurate answer based only on the provided context. If
 
 Context from codebase:
 {context_text}
+
+Relevant scoped conversation and project memory:
+{memory_context or "No prior memory available."}
 
 User question: {user_message}
 
@@ -632,6 +659,22 @@ You must:
 
         return citations
 
+    @staticmethod
+    def _format_memory_context(session_memory: List[dict[str, str]], project_memory: Dict[str, Any]) -> str:
+        """Format bounded, project-scoped memory without treating it as code evidence."""
+        recent = "\n".join(f"{item['role']}: {item['content']}" for item in session_memory[-8:])
+        summary = project_memory.get("summary", "")
+        modules = ", ".join(project_memory.get("important_modules", [])[:10])
+        return f"Project summary: {summary}\nImportant modules: {modules}\nRecent session turns:\n{recent}".strip()
+
+    @staticmethod
+    def _build_agent_trace(state: Dict[str, Any], started: float) -> List[dict[str, Any]]:
+        """Return safe trace metadata without persisting raw tool or source output."""
+        trace = [{"node": "supervisor", "status": "success", "duration_ms": int((time.perf_counter() - started) * 1000)}]
+        for item in state.get("tool_trace", []):
+            trace.append({"node": "tool", "tool": item.get("tool"), "status": item.get("status"), "result_summary": item.get("summary", {})})
+        return trace
+
     async def process_message(
         self,
         project_id: str,
@@ -653,6 +696,7 @@ You must:
         Returns:
             Dictionary containing the response and metadata
         """
+        started = time.perf_counter()
         logger.info(
             "processing_chat_message",
             project_id=project_id,
@@ -674,6 +718,10 @@ You must:
             content=user_message
         )
 
+        session_memory = await self.memory_service.get_session_memory(chat_session.id)
+        project_memory = await self.memory_service.get_project_memory(project_id)
+        memory_context = self._format_memory_context(session_memory, project_memory)
+
         # Initialize the state for the graph
         initial_state = SupervisorState(
             user_query=user_message,
@@ -693,6 +741,8 @@ You must:
             tool_trace=[],
             code_review_analysis=None,
             test_plan_analysis=None,
+            debugging_analysis=None,
+            memory_context=memory_context,
         )
 
         try:
@@ -733,6 +783,9 @@ You must:
                 elif final_state.get("test_plan_analysis"):
                     response_dict["analysis_metadata"] = final_state["test_plan_analysis"].get("metadata", {})
                     response_dict["analysis_type"] = "test_plan"
+                elif final_state.get("debugging_analysis"):
+                    response_dict["analysis_metadata"] = final_state["debugging_analysis"].get("metadata", {})
+                    response_dict["analysis_type"] = "debugging"
 
                 return response_dict
             else:
@@ -766,12 +819,21 @@ You must:
                     analysis = final_state["test_plan_analysis"]
                     content_to_store = analysis.get("answer", "")
                     citations_to_store = analysis.get("sources", [])
+                elif final_state.get("debugging_analysis"):
+                    analysis = final_state["debugging_analysis"]
+                    content_to_store = analysis.get("answer", "")
+                    citations_to_store = analysis.get("sources", [])
 
                 assistant_chat_message = await self.chat_repo.add_message(
                     session_id=chat_session.id,
                     role="assistant",
                     content=content_to_store,
-                    citations=citations_to_store
+                    citations=citations_to_store,
+                    reasoning_trace=self._build_agent_trace(final_state, started),
+                )
+                await self.memory_service.update_project_memory(
+                    project_id,
+                    summary=f"Latest request: {user_message}",
                 )
 
                 logger.info(
@@ -814,6 +876,9 @@ You must:
                 elif final_state.get("test_plan_analysis"):
                     response_dict["analysis_metadata"] = final_state["test_plan_analysis"].get("metadata", {})
                     response_dict["analysis_type"] = "test_plan"
+                elif final_state.get("debugging_analysis"):
+                    response_dict["analysis_metadata"] = final_state["debugging_analysis"].get("metadata", {})
+                    response_dict["analysis_type"] = "debugging"
 
                 return response_dict
 

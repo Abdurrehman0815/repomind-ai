@@ -227,6 +227,7 @@ async def get_chat_history(
                     "role": msg.role,
                     "content": msg.content,
                     "citations": msg.citations,
+                    "reasoning_trace": msg.reasoning_trace,
                     "created_at": (
                         msg.created_at.isoformat()
                         if msg.created_at

@@ -1,0 +1,4 @@
+[
+  {"id":"navigation-1","query":"Where is authentication implemented?","expected_files":["app/auth.py"],"required_terms":["auth"]},
+  {"id":"debugging-1","query":"Why does login fail?","expected_files":["app/auth.py"],"required_terms":["login"]}
+]
