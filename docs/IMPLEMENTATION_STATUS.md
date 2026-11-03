@@ -34,8 +34,8 @@
 | 27 | Performance | ✅ COMPLETE | 2026-10-23 |
 | 28 | Complete Frontend | ✅ COMPLETE | 2026-10-23 |
 | 29 | Local Production Build | ✅ COMPLETE | 2026-10-23 |
-| 30 | Final Local Acceptance Test | ⏳ PENDING | — |
-| 31 | Amazon Bedrock Integration | ⏳ PENDING | — |
+| 30 | Final Local Acceptance Test | ✅ COMPLETE | 2026-11-03 |
+| 31 | Azure AI Foundry Integration (replaces Amazon Bedrock) | ✅ COMPLETE | 2026-11-03 |
 
 ---
 
@@ -862,3 +862,56 @@
 ✅ PHASE 29 ACCEPTED
 
 ---
+
+## Phase 30 — Final Local Acceptance Test
+
+**Status:** ✅ COMPLETE
+**Date:** 2026-11-03
+
+### Issues found during acceptance and fixed
+- [x] Answers took 3–5 minutes on a CPU-only laptop (local Ollama, ~10 tokens/s). Resolved by Phase 31; local prompt and answer budgets were also tightened (`ANSWER_MAX_TOKENS`, `PROMPT_CONTEXT_CHUNKS`, `PROMPT_CHUNK_MAX_CHARS`).
+- [x] Indexing failed on UTF-16 files (e.g. Windows `requirements.txt`): NUL bytes reached PostgreSQL. Added `app/ingestion/text_io.py` (BOM-aware decode, NUL stripping) used by both the symbol extractor and the chunker.
+- [x] One failing file aborted the whole project (`MissingGreenlet` after rollback). Expired rows are now refreshed; a bad file is marked `error` and indexing continues.
+- [x] Code-navigation questions always failed: `_extract_relevant_symbols` / `_generate_precise_locations` were called but never implemented. Implemented both.
+- [x] Symbol analysis silently returned nothing (`symbol.start_line` vs model field `line_start`). Fixed in the analyst and planner agents.
+- [x] Prompts and answers cited internal file UUIDs. Retrieval now maps file ids to repository paths (`file_label`); duplicate citations are removed.
+- [x] Debugging and Test Plan agents returned hard-coded template text. Both now generate grounded answers from retrieved code via `app/agents/grounding.py`, with citations.
+- [x] MCP tools never loaded in Docker (folder not mounted; `from __future__ import annotations` broke FastMCP's runtime type inspection). Mounted `mcp-server/` read-only and fixed the module; all 10 tools register.
+- [x] Removed placeholder sidebar pages (Repository, Code Review, Plan, Test Plan, Trace, Evaluations); Chat routes every analysis type through the supervisor and shows example questions.
+- [x] Added local folder upload (`POST /api/v1/projects/upload`), real indexing progress (files done/total, time left) and a sidebar health indicator with per-service tooltip.
+- [x] Added `python -m evals.run` (sample repository + grounding cases); added ESLint 9 flat config and `ruff`.
+
+### Verification
+- [x] Backend unit tests: 147/147 passed.
+- [x] MCP server tests (standalone, `mcp-server/`): 27/27 passed.
+- [x] Frontend: `npm run build` and `npm run lint` (0 warnings) pass.
+- [x] Live end-to-end run (Docker stack + Azure): GitHub import of a 4-file repository indexed in ~12 s with 0 errors; questions answered in 5–15 s with real file:line citations.
+- [x] `python -m evals.run`: 2/2 cases passed (100% citation recall, 100% term recall); folder-upload path verified.
+
+### Acceptance Status
+✅ PHASE 30 ACCEPTED
+
+---
+
+## Phase 31 — Azure AI Foundry Integration (replaces Amazon Bedrock)
+
+**Status:** ✅ COMPLETE
+**Date:** 2026-11-03
+
+### Decision
+The planned Amazon Bedrock phase was replaced by Azure AI Foundry (see `docs/DECISIONS.md`). No AWS code, SDKs or credentials were added.
+
+### Implemented
+- [x] `AzureFoundryProvider` (`app/ai/providers/azure_foundry.py`) behind the existing `LLMProvider` interface: generate, stream, structured output; OpenAI and Anthropic wire formats; retries on dropped connections, 429 and 5xx.
+- [x] `AzureEmbeddingProvider` (`app/ai/providers/azure_embedding.py`): batched (64), concurrent (6), retry with `Retry-After`, content-hash cache, 768-dimension output so the pgvector schema is unchanged.
+- [x] Configuration only through environment variables (`LLM_PROVIDER=azure_foundry`, `LLM_ENDPOINT`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_API_STYLE`, `EMBEDDING_*`, `RETRIEVAL_MIN_SIMILARITY`); Ollama remains as an offline fallback.
+- [x] `/health/full` reports the active LLM and embedding providers (cached for 5 minutes so UI polling does not call the models).
+- [x] Deployed models: `gpt-4.1-mini` (chat) and `text-embedding-3-small` (embeddings), Global Standard, East US 2.
+
+### Verification
+- [x] Health check: both Azure deployments return `ok` with a live request.
+- [x] Indexing and chat verified end to end against Azure (see Phase 30).
+
+### Acceptance Status
+✅ PHASE 31 ACCEPTED
+

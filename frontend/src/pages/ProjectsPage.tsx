@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   fetchProjects,
   createProject,
+  uploadProject,
   scanProject,
   deleteProject,
 } from '@/services/api'
@@ -27,24 +28,34 @@ export default function ProjectsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [repoPath, setRepoPath] = useState('')
   const [repoName, setRepoName] = useState('')
+  const [folderFiles, setFolderFiles] = useState<File[]>([])
+  const [uploadPercent, setUploadPercent] = useState(0)
+  const folderInputRef = useRef<HTMLInputElement>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
-  const { data: projects, isLoading, isError } = useQuery({
+  const { data: projects, isLoading, isError } = useQuery<Project[]>({
     queryKey: ['projects'],
     queryFn: fetchProjects,
+    // Keep the visible indexing state current without requiring a manual refresh.
+    refetchInterval: 3000,
   })
 
   // Create Project Mutation
   const createMutation = useMutation({
-    mutationFn: () => createProject(repoPath, repoName),
+    mutationFn: () =>
+      folderFiles.length > 0
+        ? uploadProject(folderFiles, repoName.trim() || undefined, setUploadPercent)
+        : createProject(repoPath, repoName),
     onSuccess: (newProj) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setIsModalOpen(false)
       setRepoPath('')
       setRepoName('')
+      setFolderFiles([])
+      setUploadPercent(0)
       setErrorMessage(null)
-      setSuccessMessage(`Repository '${newProj.name}' imported with ${newProj.file_count} files!`)
+      setSuccessMessage(`Repository '${newProj.name}' was added. Indexing has started; progress is shown on its card.`)
       setTimeout(() => setSuccessMessage(null), 5000)
     },
     onError: (err: any) => {
@@ -77,14 +88,34 @@ export default function ProjectsPage() {
     },
   })
 
+  const activeIndexingProject = projects?.find((p) => p.status === 'indexing')
+  const isActivelyIndexing = Boolean(activeIndexingProject || createMutation.isPending || scanMutation.isPending)
+
   const handleImportSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!repoPath.trim()) {
-      setErrorMessage('Repository path cannot be empty.')
+    if (!repoPath.trim() && folderFiles.length === 0) {
+      setErrorMessage('Enter a GitHub URL / path, or choose a folder from your computer.')
       return
     }
     setErrorMessage(null)
     createMutation.mutate()
+  }
+
+  const handleFolderPicked = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const skip = /(^|\/)(\.git|node_modules|venv|\.venv|__pycache__|dist|build|\.next)\//
+    const picked = Array.from(event.target.files ?? []).filter(
+      (file) => !skip.test(file.webkitRelativePath) && file.size <= 10 * 1024 * 1024
+    )
+    setFolderFiles(picked)
+    if (picked.length > 0) {
+      setRepoPath('')
+      if (!repoName.trim()) setRepoName(picked[0].webkitRelativePath.split('/')[0])
+    }
+  }
+
+  const formatDuration = (seconds: number) => {
+    if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`
+    return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`
   }
 
   const formatBytes = (bytes: number) => {
@@ -129,7 +160,7 @@ export default function ProjectsPage() {
             Repositories & Codebases
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Import, scan, and inspect local repositories with automated language detection and AST symbol mapping.
+            Import public GitHub repositories or local workspaces, then index them for code search and agent analysis.
           </p>
         </div>
         <div>
@@ -146,6 +177,97 @@ export default function ProjectsPage() {
           </button>
         </div>
       </div>
+
+      {/* Prominent Indexing Activity Card */}
+      {isActivelyIndexing && (() => {
+        const fileCount = activeIndexingProject?.file_count ?? 0
+        const indexing = activeIndexingProject?.metadata?.indexing
+        const done = indexing?.files_done ?? 0
+        const total = indexing?.files_total ?? 0
+        const percent = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0
+        const elapsed = indexing?.started_at ? Date.now() / 1000 - indexing.started_at : 0
+        const phaseLabel =
+          indexing?.phase === 'cloning' ? 'Cloning repository'
+          : indexing?.phase === 'scanning' ? 'Scanning files'
+          : indexing?.phase === 'embedding' ? 'Parsing and embedding'
+          : 'Starting'
+        const timeLabel =
+          indexing?.phase === 'embedding' && done >= 2 && elapsed > 0
+            ? `~${formatDuration(((total - done) * elapsed) / done)} left`
+            : 'estimating…'
+        return (
+          <div className="p-5 rounded-2xl border border-primary/40 bg-gradient-to-r from-primary/10 via-accent/5 to-primary/10 shadow-lg backdrop-blur-md space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
+                </span>
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    <span>Indexing Activity</span>
+                    <span className="text-xs font-normal text-muted-foreground font-mono">
+                      ({activeIndexingProject?.name || repoName || 'Active Task'})
+                    </span>
+                  </h3>
+                  <p className="text-xs text-muted-foreground font-mono truncate max-w-lg">
+                    {activeIndexingProject?.path || repoPath || 'Processing codebase pipeline...'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {fileCount > 0 && (
+                  <span className="px-3 py-1 rounded-full text-xs font-medium bg-accent/10 text-accent border border-accent/20">
+                    ⏱ {timeLabel} · {total > 0 ? `${done}/${total} files` : `${fileCount} files`}
+                  </span>
+                )}
+                <span className="px-3 py-1 rounded-full text-xs font-medium bg-primary/20 text-primary border border-primary/30 flex items-center gap-1.5">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>{phaseLabel}</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Indeterminate Progress Bar */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">
+                  Extracting AST symbols, chunking source, and generating vector embeddings...
+                </span>
+                <span className="font-mono text-primary font-medium flex items-center gap-1 ml-3 shrink-0">
+                  {total > 0 ? `${percent}%` : <Loader2 className="w-3 h-3 animate-spin" />}
+                </span>
+              </div>
+              <div className="h-2.5 w-full bg-secondary/80 rounded-full overflow-hidden relative border border-primary/20 shadow-inner">
+                {total > 0 ? (
+                  <div className="h-full bg-gradient-to-r from-primary via-accent to-primary rounded-full transition-all duration-500" style={{ width: `${percent}%` }} />
+                ) : (
+                  <div className="h-full w-1/3 bg-gradient-to-r from-primary via-accent to-primary rounded-full animate-indeterminate-bar shadow-[0_0_12px_rgba(59,130,246,0.6)]" />
+                )}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                This page auto-refreshes every 3s. When indexing completes, status will change to <span className="text-emerald-400 font-medium">indexed</span> and you can start asking questions in Chat.
+              </p>
+            </div>
+
+            {/* Pipeline Stages */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-xs">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-card/60 border border-emerald-500/30">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span className="text-foreground">1. Ingestion & File Sync ✓</span>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-card/60 border border-primary/30">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-accent shrink-0" />
+                <span className="text-foreground">2. AST Symbols & Graph</span>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-card/60 border border-primary/30">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-primary shrink-0" />
+                <span className="text-foreground">3. Vector Embeddings</span>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Projects List / Empty State */}
       {isLoading ? (
@@ -165,7 +287,7 @@ export default function ProjectsPage() {
           <div className="space-y-1">
             <h3 className="text-base font-semibold text-foreground">No repositories indexed yet</h3>
             <p className="text-sm text-muted-foreground max-w-md">
-              Start by connecting a local git repository. RepoMind AI will parse AST symbols, extract semantic chunks, and build the dependency graph.
+              Connect a public GitHub repository or a local workspace. RepoMind AI will parse symbols, extract semantic chunks, generate embeddings, and build the dependency graph.
             </p>
           </div>
           <button
@@ -192,7 +314,13 @@ export default function ProjectsPage() {
                       {project.name}
                     </span>
                   </div>
-                  <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-secondary text-secondary-foreground capitalize">
+                  <span className={`px-2 py-0.5 rounded text-[11px] font-mono capitalize ${
+                    project.status === 'indexed'
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                      : project.status === 'indexing'
+                      ? 'bg-primary/10 text-primary border border-primary/20 animate-pulse'
+                      : 'bg-secondary text-secondary-foreground'
+                  }`}>
                     {project.status}
                   </span>
                 </div>
@@ -202,6 +330,19 @@ export default function ProjectsPage() {
               </div>
 
               <div className="space-y-3 pt-3 border-t border-border/50">
+                {(scanMutation.isPending && scanMutation.variables === project.id) || project.status === 'indexing' ? (
+                  <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                    <div className="flex items-center justify-between text-xs text-primary font-medium">
+                      <span>Indexing repository…</span>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    </div>
+                    {/* Indeterminate Animated Progress Bar */}
+                    <div className="h-2 w-full bg-secondary/80 rounded-full overflow-hidden relative border border-primary/20">
+                      <div className="h-full w-1/3 bg-gradient-to-r from-primary via-accent to-primary rounded-full animate-indeterminate-bar shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">Scanning files, parsing AST symbols, and creating vector embeddings.</p>
+                  </div>
+                ) : null}
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span className="flex items-center gap-1.5">
                     <FileCode className="w-3.5 h-3.5 text-primary" />
@@ -261,7 +402,7 @@ export default function ProjectsPage() {
             <div className="flex items-center justify-between border-b border-border pb-3">
               <div className="flex items-center gap-2">
                 <FolderGit2 className="w-5 h-5 text-primary" />
-                <h3 className="text-lg font-semibold text-foreground">Import Local Repository</h3>
+                <h3 className="text-lg font-semibold text-foreground">Import Repository</h3>
               </div>
               <button
                 onClick={() => setIsModalOpen(false)}
@@ -281,18 +422,41 @@ export default function ProjectsPage() {
             <form onSubmit={handleImportSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-foreground mb-1.5">
-                  Repository Directory Path <span className="text-rose-400">*</span>
+                  Repository Path or Public GitHub URL <span className="text-rose-400">*</span>
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. C:\Users\name\projects\my-app or /home/name/my-app"
+                  placeholder="https://github.com/owner/repository or C:\Users\name\projects\my-app"
                   value={repoPath}
                   onChange={(e) => setRepoPath(e.target.value)}
                   className="w-full px-3.5 py-2 rounded-lg bg-secondary/50 border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary font-mono placeholder:font-sans placeholder:text-muted-foreground"
                   autoFocus
                 />
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  Local path on the machine running RepoMind AI. .gitignore rules will be applied automatically.
+                  Use a public GitHub URL or a local path visible to the backend container. GitHub repositories are cloned into RepoMind's managed workspace.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 text-[11px] text-muted-foreground"><span className="h-px flex-1 bg-border" />or<span className="h-px flex-1 bg-border" /></div>
+
+              <div>
+                <input
+                  ref={folderInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={handleFolderPicked}
+                  {...({ webkitdirectory: '', directory: '', multiple: true } as Record<string, unknown>)}
+                />
+                <button
+                  type="button"
+                  onClick={() => folderInputRef.current?.click()}
+                  className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-lg border border-dashed border-primary/40 bg-primary/5 text-sm text-primary hover:bg-primary/10 transition"
+                >
+                  <HardDrive className="w-4 h-4" />
+                  {folderFiles.length > 0 ? `${folderFiles.length} files selected — choose a different folder` : 'Choose a folder from this computer'}
+                </button>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  The folder is copied into RepoMind's workspace (your original stays untouched). .git, node_modules, venv and build output are skipped automatically.
                 </p>
               </div>
 
@@ -309,11 +473,26 @@ export default function ProjectsPage() {
                 />
               </div>
 
+              {createMutation.isPending && (
+                <div className="space-y-2 p-3 rounded-xl border border-primary/30 bg-primary/5">
+                  <div className="flex items-center justify-between text-xs text-primary font-medium">
+                    <span className="flex items-center gap-1.5">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      {folderFiles.length > 0 ? `Uploading folder… ${uploadPercent}%` : 'Registering repository and initiating indexing pipeline...'}
+                    </span>
+                  </div>
+                  <div className="h-2 w-full bg-secondary/80 rounded-full overflow-hidden relative border border-primary/20">
+                    <div className="h-full w-1/3 bg-gradient-to-r from-primary via-accent to-primary rounded-full animate-indeterminate-bar shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-border">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-medium rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition"
+                  disabled={createMutation.isPending}
+                  className="px-4 py-2 text-xs font-medium rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -325,12 +504,12 @@ export default function ProjectsPage() {
                   {createMutation.isPending ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Scanning Files...
+                      Importing & Indexing...
                     </>
                   ) : (
                     <>
                       <FolderGit2 className="w-3.5 h-3.5" />
-                      Import & Scan
+                      Import & Index
                     </>
                   )}
                 </button>

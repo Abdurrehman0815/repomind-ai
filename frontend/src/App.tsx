@@ -12,14 +12,9 @@ export default function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="projects" element={<ProjectsPage />} />
-          <Route path="chat" element={<WorkspacePage mode="chat" />} />
-          <Route path="repository" element={<WorkspacePage mode="repository" />} />
-          <Route path="review" element={<WorkspacePage mode="review" />} />
-          <Route path="plan" element={<WorkspacePage mode="plan" />} />
-          <Route path="tests" element={<WorkspacePage mode="tests" />} />
-          <Route path="trace" element={<WorkspacePage mode="trace" />} />
-          <Route path="evaluations" element={<WorkspacePage mode="evaluations" />} />
-          <Route path="settings" element={<WorkspacePage mode="settings" />} />
+          <Route path="chat" element={<WorkspacePage />} />
+          {/* Former placeholder pages: chat already routes these questions to the matching agent. */}
+          <Route path="*" element={<Navigate to="/chat" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>

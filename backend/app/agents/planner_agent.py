@@ -6,21 +6,18 @@ Implements a specialized agent for creating implementation plans for feature req
 
 from __future__ import annotations
 
-from typing import Any, List, Dict, Tuple, Optional
-from uuid import UUID
+from typing import Any, List, Dict, Tuple
 import structlog
 
 from app.ai.providers.registry import get_llm_provider
 from app.ai.providers.base import GenerateOptions
-from app.models.chat import ChatSession, ChatMessage
-from app.models.project import Project
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.chunk_repository import ChunkRepository
 from app.repositories.symbol_repository import SymbolRepository
 from app.repositories.dependency_repository import DependencyRepository
 from app.services.citation_service import CitationService
-from app.services.retrieval_service import RetrievalService
+from app.services.retrieval_service import RetrievalService, file_label
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
@@ -210,8 +207,8 @@ class PlannerAgent:
                         "name": symbol.name,
                         "kind": symbol.kind,
                         "file_id": str(symbol.file_id) if symbol.file_id else None,
-                        "line_start": symbol.start_line,
-                        "line_end": symbol.end_line,
+                        "line_start": symbol.line_start,
+                        "line_end": symbol.line_end,
                         "docstring": getattr(symbol, 'docstring', None)
                     })
 
@@ -222,7 +219,7 @@ class PlannerAgent:
                 file_distribution[file_id].append({
                     "name": symbol.name,
                     "kind": symbol.kind,
-                    "line_start": symbol.start_line
+                    "line_start": symbol.line_start
                 })
 
             return {
@@ -424,7 +421,7 @@ Format your response as a clear, actionable implementation plan that a developer
             symbol = getattr(chunk, 'symbol', 'unknown')
 
             formatted_chunks.append(
-                f"[File {file_id}:L{start_line}-L{end_line}] Symbol: {symbol} (Relevance: {score:.2f})\n{content}\n"
+                f"[{file_label(file_id)}:L{start_line}-L{end_line}] Symbol: {symbol} (Relevance: {score:.2f})\n{content}\n"
             )
 
         return "\n---\n".join(formatted_chunks)
@@ -438,7 +435,7 @@ Format your response as a clear, actionable implementation plan that a developer
         formatted = []
         for symbol in key_symbols[:10]:  # Top 10 symbols
             symbol_str = (
-                f"- {symbol['name']} ({symbol['kind']}) in File {symbol['file_id']}:L{symbol['line_start']}-L{symbol['line_end']}"
+                f"- {symbol['name']} ({symbol['kind']}) in {file_label(symbol['file_id'])}:L{symbol['line_start']}-L{symbol['line_end']}"
             )
             if symbol.get('docstring'):
                 symbol_str += ': ' + symbol['docstring'][:100] + '...'
@@ -460,7 +457,7 @@ Format your response as a clear, actionable implementation plan that a developer
             formatted.append("FILES THAT MAY NEED MODIFICATION:")
             for file_info in affected_files[:5]:  # Top 5
                 formatted.append(
-                    f"- File {file_info['file_id']}: {file_info['reason']}"
+                    f"- {file_label(file_info['file_id'])}: {file_info['reason']}"
                     f" ({file_info['existing_symbols_count']} related symbols)"
                 )
 

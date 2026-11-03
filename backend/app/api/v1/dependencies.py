@@ -3,7 +3,6 @@ RepoMind AI — Dependencies API
 
 Handles dependency retrieval for projects and files.
 """
-from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 from sqlalchemy.ext.asyncio import AsyncSession
 import structlog

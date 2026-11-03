@@ -38,6 +38,17 @@ def get_llm_provider() -> LLMProvider:
             model=settings.ollama_model,
             timeout=settings.ollama_timeout,
             max_tokens=settings.ollama_max_tokens,
+            keep_alive=settings.ollama_keep_alive,
+            num_ctx=settings.ollama_num_ctx,
+        )
+    elif settings.llm_provider == "azure_foundry":
+        from app.ai.providers.azure_foundry import AzureFoundryProvider
+        return AzureFoundryProvider(
+            endpoint=settings.llm_endpoint,
+            api_key=settings.llm_api_key,
+            model=settings.llm_model,
+            api_style=settings.llm_api_style,
+            timeout=settings.llm_timeout,
         )
     elif settings.llm_provider == "bedrock":
         # Bedrock implementation is added in Phase 32.

@@ -1,7 +1,7 @@
 """
 RepoMind AI — SQLAlchemy Declarative Base
 """
-from sqlalchemy.orm import DeclarativeBase, MappedColumn
+from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import MetaData
 
 # Naming convention for constraints (important for Alembic autogenerate)

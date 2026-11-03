@@ -5,11 +5,9 @@ from __future__ import annotations
 
 import hashlib
 import os
-from typing import Optional
-from uuid import UUID
+from typing import Optional, Tuple
 
 import structlog
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.file_document import FileDocument

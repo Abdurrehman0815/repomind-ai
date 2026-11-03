@@ -6,7 +6,6 @@ Implements a LangGraph supervisor that orchestrates the AI workflow for codebase
 from __future__ import annotations
 
 from typing import Any, List, Optional, Dict, Tuple
-from uuid import UUID
 import structlog
 import time
 
@@ -14,19 +13,19 @@ from langgraph.graph import StateGraph, END
 from typing_extensions import TypedDict
 
 from app.ai.providers.registry import get_llm_provider
+from app.core.config import get_settings
 from app.ai.providers.base import GenerateOptions, StreamChunk
-from app.models.chat import ChatSession, ChatMessage
-from app.models.project import Project
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.project_repository import ProjectRepository
 from app.services.citation_service import CitationService
-from app.services.retrieval_service import RetrievalService
+from app.services.retrieval_service import RetrievalService, file_label
 from app.agents.codebase_analyst_agent import CodebaseAnalystAgent
 from app.agents.planner_agent import PlannerAgent
 from app.agents.changeimpact_agent import ChangeImpactAgent
 from app.agents.tool_using_agent import ToolUsingAgent
 from app.agents.code_review_agent import CodeReviewAgent
 from app.agents.test_plan_agent import TestPlanAgent
+from app.agents.grounding import GroundedAnswerer
 from app.agents.debugging_agent import DebuggingAgent
 from app.services.memory_service import MemoryService
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,6 +58,18 @@ class SupervisorState(TypedDict):
     memory_context: str
 
 
+def _dedupe_citations(citations: List[dict[str, Any]]) -> List[dict[str, Any]]:
+    """Drop repeated citations (several chunks can share one file/line range)."""
+    seen: set[tuple[Any, Any, Any]] = set()
+    unique = []
+    for citation in citations or []:
+        key = (citation.get("file_path"), citation.get("start_line"), citation.get("end_line"))
+        if key not in seen:
+            seen.add(key)
+            unique.append(citation)
+    return unique
+
+
 class SupervisorService:
     """Service for handling chat interactions using LangGraph supervision."""
 
@@ -73,8 +84,9 @@ class SupervisorService:
         self.changeimpact_agent = ChangeImpactAgent(session)
         self.tool_using_agent = ToolUsingAgent()
         self.code_review_agent = CodeReviewAgent(session)
-        self.test_plan_agent = TestPlanAgent()
-        self.debugging_agent = DebuggingAgent()
+        grounded = GroundedAnswerer(session)
+        self.test_plan_agent = TestPlanAgent(answerer=grounded)
+        self.debugging_agent = DebuggingAgent(answerer=grounded)
         self.memory_service = MemoryService(session)
         # Build the LangGraph
         self.graph = self._build_graph()
@@ -478,7 +490,7 @@ Please provide a concise, accurate answer based only on the provided context. If
         provider = get_llm_provider()
         options = GenerateOptions(
             temperature=0.1,
-            max_tokens=2048,
+            max_tokens=get_settings().answer_max_tokens,
             system_prompt=system_prompt
         )
 
@@ -538,7 +550,7 @@ Please provide a concise, accurate answer based only on the provided context. If
         provider = get_llm_provider()
         options = GenerateOptions(
             temperature=0.1,
-            max_tokens=2048,
+            max_tokens=get_settings().answer_max_tokens,
             system_prompt=system_prompt
         )
 
@@ -571,7 +583,7 @@ Please provide a concise, accurate answer based only on the provided context. If
             end_line = getattr(chunk, 'end_line', '?')
 
             formatted_chunks.append(
-                f"[File {file_id}:L{start_line}-L{end_line}]\n{content}\n"
+                f"[{file_label(file_id)}:L{start_line}-L{end_line}]\n{content}\n"
             )
 
         return "\n---\n".join(formatted_chunks)
@@ -828,7 +840,7 @@ You must:
                     session_id=chat_session.id,
                     role="assistant",
                     content=content_to_store,
-                    citations=citations_to_store,
+                    citations=_dedupe_citations(citations_to_store),
                     reasoning_trace=self._build_agent_trace(final_state, started),
                 )
                 await self.memory_service.update_project_memory(
@@ -852,7 +864,7 @@ You must:
                     "message_id": user_chat_message.id,
                     "response": final_state.get("generated_response", ""),
                     "intent": final_state["intent"],
-                    "citations": final_state.get("citations", []),
+                    "citations": _dedupe_citations(final_state.get("citations", [])),
                     "stream": False,
                     "tool_trace": final_state.get("tool_trace", []),
                 }

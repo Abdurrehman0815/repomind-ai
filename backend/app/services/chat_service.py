@@ -7,19 +7,16 @@ START → classify → retrieve → generate → validate citations → END
 from __future__ import annotations
 
 import structlog
-from typing import Any, List, Optional, Tuple
-from uuid import UUID
+from typing import Any, List, Tuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.providers.registry import get_llm_provider
 from app.ai.providers.base import GenerateOptions, StreamChunk
-from app.models.chat import ChatSession, ChatMessage
-from app.models.project import Project
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.project_repository import ProjectRepository
 from app.services.citation_service import CitationService
-from app.services.retrieval_service import RetrievalService
+from app.services.retrieval_service import RetrievalService, file_label
 
 logger = structlog.get_logger(__name__)
 
@@ -356,7 +353,7 @@ Please provide a concise, accurate answer based only on the provided context. If
             end_line = getattr(chunk, 'end_line', '?')
 
             formatted_chunks.append(
-                f"[File {file_id}:L{start_line}-L{end_line}]\n{content}\n"
+                f"[{file_label(file_id)}:L{start_line}-L{end_line}]\n{content}\n"
             )
 
         return "\n---\n".join(formatted_chunks)

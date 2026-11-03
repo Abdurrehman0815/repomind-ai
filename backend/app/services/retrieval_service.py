@@ -8,17 +8,34 @@ from __future__ import annotations
 
 import structlog
 from typing import Any, List, Optional, Tuple
-from uuid import UUID
 
 from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.code_chunk import CodeChunk
+from app.models.file_document import FileDocument
 from app.repositories.chunk_repository import ChunkRepository
 from app.ai.providers.embedding_registry import get_embedding_provider
 from app.ai.providers.embedding_base import EmbeddingOptions
+from app.core.config import get_settings
 
 logger = structlog.get_logger(__name__)
+
+# file_id -> repository-relative path. File ids are unique UUIDs, so entries
+# never go stale; prompts use this so the model cites real paths, not ids.
+_FILE_PATHS: dict[str, str] = {}
+
+
+def file_label(file_id: Any) -> str:
+    """Return the repository path for a file id, for use in LLM prompts."""
+    return _FILE_PATHS.get(str(file_id)) or f"File {file_id}"
+
+
+def clip_for_prompt(content: Any) -> str:
+    """Cap chunk text for a prompt, marking any cut so the model never reads it as broken code."""
+    text = str(content)
+    limit = get_settings().prompt_chunk_max_chars
+    return text if len(text) <= limit else text[:limit] + "\n... [chunk truncated for length]"
 
 
 class RetrievalService:
@@ -27,6 +44,19 @@ class RetrievalService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.chunk_repo = ChunkRepository(session)
+
+    async def _remember_file_paths(self, file_ids: Any) -> None:
+        """Load relative paths for any retrieved file ids not yet known."""
+        missing = {str(fid) for fid in file_ids if fid and str(fid) not in _FILE_PATHS}
+        if not missing:
+            return
+        try:
+            rows = await self.session.execute(
+                select(FileDocument.id, FileDocument.relative_path).where(FileDocument.id.in_(missing))
+            )
+            _FILE_PATHS.update({str(fid): path for fid, path in rows.all()})
+        except Exception as exc:  # labels are cosmetic; never fail retrieval over them
+            logger.warning(f"file_path_lookup_failed: {exc}")
 
     async def vector_search(
         self,
@@ -313,7 +343,7 @@ class RetrievalService:
             file_id=file_id,
             language=language,
             limit=candidate_limit,
-            similarity_threshold=0.5  # Lower threshold to get more candidates
+            similarity_threshold=get_settings().retrieval_min_similarity  # low: RRF ranks candidates
         )
 
         text_results = await self.text_search(
@@ -375,6 +405,7 @@ class RetrievalService:
         # Sort by combined score descending and limit results
         scored_chunks.sort(key=lambda x: x[1], reverse=True)
         final_results = scored_chunks[:limit]
+        await self._remember_file_paths(chunk.file_id for chunk, _ in final_results)
 
         logger.info(
             f"hybrid_search_completed: query={query_text[:50]}, project_id={project_id}, "

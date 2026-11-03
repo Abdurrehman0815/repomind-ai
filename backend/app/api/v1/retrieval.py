@@ -11,7 +11,6 @@ import structlog
 
 from app.db.session import get_db
 from app.services.retrieval_service import RetrievalService
-from app.models.code_chunk import CodeChunk
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

@@ -9,16 +9,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, List, Optional, Tuple
 import structlog
 import tiktoken
 
-from app.models.code_chunk import CodeChunk
 from app.models.code_symbol import CodeSymbol
 from app.models.file_document import FileDocument
 from app.ai.providers.embedding_registry import get_embedding_provider
 from app.ai.providers.embedding_base import EmbeddingOptions
+from app.ingestion.text_io import read_source_text
 
 logger = structlog.get_logger(__name__)
 
@@ -80,7 +79,7 @@ class Chunker:
         """
         if content is None:
             try:
-                content = Path(file_doc.path).read_text(encoding="utf-8", errors="replace")
+                content = read_source_text(file_doc.path)
             except Exception as exc:
                 self.logger.warning(
                     "failed_to_read_file_for_chunking",
@@ -659,11 +658,14 @@ class Chunker:
 
         # Persist chunks with embeddings
         persisted_chunks = []
+        # Capture ids once: a failed flush expires the ORM row, and reading it
+        # afterwards would raise instead of logging.
+        project_id, file_id = file_doc.project_id, file_doc.id
         for i, (chunk_data, embedding) in enumerate(zip(chunk_data_list, embeddings)):
             try:
                 chunk = await chunk_repo.create(
-                    project_id=file_doc.project_id,
-                    file_id=file_doc.id,
+                    project_id=project_id,
+                    file_id=file_id,
                     chunk_index=i,
                     content=chunk_data.content,
                     start_line=chunk_data.start_line,
@@ -677,7 +679,7 @@ class Chunker:
                 self.logger.debug(
                     "created_code_chunk",
                     chunk_id=chunk.id,
-                    file_id=file_doc.id,
+                    file_id=file_id,
                     lines=f"{chunk.start_line}-{chunk.end_line}",
                     type=chunk_data.chunk_type,
                     has_embedding=embedding is not None
@@ -685,9 +687,11 @@ class Chunker:
             except Exception as exc:
                 self.logger.error(
                     "failed_to_persist_chunk",
-                    file_id=file_doc.id,
+                    file_id=file_id,
                     chunk_index=i,
                     error=str(exc)
                 )
+                # A failed flush poisons the session; let the caller roll back this file.
+                raise
 
         return persisted_chunks

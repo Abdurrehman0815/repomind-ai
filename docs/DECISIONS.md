@@ -194,3 +194,9 @@ The `evals/` directory contains a full evaluation framework from Phase 26.
 A sample repository with known Q&A pairs is created as the evaluation dataset.
 Evaluation is run via `python -m evals.run`.
 No phase is considered "complete" if evaluation metrics regress.
+
+## Hosted LLM: Azure AI Foundry replaces AWS Bedrock (2026-11-02)
+Local Ollama on a CPU-only laptop is too slow (~10 tok/s) and too inaccurate for acceptance testing.
+The final hosted provider is Azure AI Foundry, implemented as `AzureFoundryProvider` behind the existing
+`LLMProvider` interface (`LLM_PROVIDER=azure_foundry`). Bedrock is no longer planned. Endpoint, key and
+deployment name come from environment variables only. Embeddings and retrieval stay local.

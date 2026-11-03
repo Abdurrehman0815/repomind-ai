@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import re
 import structlog
-from typing import Any
 
 from app.ingestion.parsers.base import (
     BaseCodeParser,

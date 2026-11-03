@@ -17,7 +17,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 15000,
+  timeout: 120000,
 })
 
 export const fetchHealth = async (): Promise<HealthResponse> => {
@@ -44,9 +44,32 @@ export const createProject = async (
   path: string,
   name?: string
 ): Promise<Project> => {
-  const response = await api.post<Project>('/api/v1/projects', {
-    path,
-    name: name || undefined,
+  const response = await api.post<Project>(
+    '/api/v1/projects',
+    {
+      path,
+      name: name || undefined,
+    },
+    { timeout: 180000 }
+  )
+  return response.data
+}
+
+export const uploadProject = async (
+  files: File[],
+  name: string | undefined,
+  onProgress?: (percent: number) => void
+): Promise<Project> => {
+  const form = new FormData()
+  // webkitRelativePath keeps the folder structure ("my-app/src/main.py").
+  files.forEach((file) => form.append('files', file, file.webkitRelativePath || file.name))
+  if (name) form.append('name', name)
+  const response = await api.post<Project>('/api/v1/projects/upload', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 600000,
+    onUploadProgress: (event) => {
+      if (onProgress && event.total) onProgress(Math.round((event.loaded / event.total) * 100))
+    },
   })
   return response.data
 }
@@ -54,12 +77,43 @@ export const createProject = async (
 export const scanProject = async (
   projectId: string
 ): Promise<{ project_id: string; status: string; summary: ScanSummary }> => {
-  const response = await api.post(`/api/v1/projects/${projectId}/scan`)
+  const response = await api.post(
+    `/api/v1/projects/${projectId}/scan`,
+    null,
+    { timeout: 180000 }
+  )
   return response.data
 }
 
 export const deleteProject = async (projectId: string): Promise<void> => {
   await api.delete(`/api/v1/projects/${projectId}`)
+}
+
+export interface ChatCitation {
+  file_path: string
+  start_line: number
+  end_line: number
+  symbol?: string | null
+}
+
+export interface ChatResponse {
+  session_id: string
+  message_id: string
+  response: string
+  intent: string
+  citations: ChatCitation[]
+}
+
+export const sendChatMessage = async (
+  projectId: string,
+  sessionId: string,
+  message: string,
+): Promise<ChatResponse> => {
+  const response = await api.post<ChatResponse>('/api/v1/chat', null, {
+    params: { project_id: projectId, session_id: sessionId, message, stream: false },
+    timeout: 180000,
+  })
+  return response.data
 }
 
 export const fetchProjectFiles = async (

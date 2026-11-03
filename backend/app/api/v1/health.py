@@ -5,7 +5,7 @@ Provides health information for load balancers, Docker health checks,
 and startup diagnostics.
 """
 import time
-from typing import Any
+from typing import Awaitable, Callable
 
 import structlog
 from fastapi import APIRouter
@@ -107,11 +107,12 @@ async def health_check_full() -> HealthResponse:
             message="Skipped — database unavailable",
         )
 
-    # ── Ollama (non-blocking check) ───────────────────────────
-    ollama_status = await _check_ollama()
-    components["ollama"] = ollama_status
-    if ollama_status.status == "unavailable" and overall == "healthy":
-        overall = "degraded"
+    # ── Active AI providers (Azure Foundry or Ollama) ─────────
+    for name, check in (("llm", _check_llm), ("embeddings", _check_embeddings)):
+        component = await _cached(name, check)
+        components[name] = component
+        if component.status != "ok" and overall == "healthy":
+            overall = "degraded"
 
     logger.info("health_check_full", overall=overall, components=list(components.keys()))
 
@@ -124,38 +125,50 @@ async def health_check_full() -> HealthResponse:
     )
 
 
-async def _check_ollama() -> ComponentStatus:
-    """Check if Ollama is reachable."""
-    import httpx
-    settings = get_settings()
+# Provider checks make a real (tiny) model call, and the UI polls every 30s,
+# so results are cached rather than paying for a request on every poll.
+_PROVIDER_CHECK_TTL_S = 300
+_provider_cache: dict[str, tuple[float, ComponentStatus]] = {}
 
-    if settings.llm_provider != "ollama":
-        return ComponentStatus(
-            status="ok",
-            message=f"Provider is '{settings.llm_provider}', Ollama not used",
-        )
 
+async def _cached(name: str, check: Callable[[], Awaitable[ComponentStatus]]) -> ComponentStatus:
+    cached = _provider_cache.get(name)
+    if cached and time.monotonic() - cached[0] < _PROVIDER_CHECK_TTL_S:
+        return cached[1]
+    status = await check()
+    # Cache failures briefly so a fixed key/endpoint shows green again quickly.
+    ttl_start = time.monotonic() if status.status == "ok" else time.monotonic() - _PROVIDER_CHECK_TTL_S + 30
+    _provider_cache[name] = (ttl_start, status)
+    return status
+
+
+async def _check_llm() -> ComponentStatus:
+    """Check the configured LLM provider with a minimal request."""
+    from app.ai.providers.registry import get_llm_provider
     try:
+        provider = get_llm_provider()
         t0 = time.monotonic()
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{settings.ollama_base_url}/api/version")
+        ok = await provider.health_check()
         latency = round((time.monotonic() - t0) * 1000, 1)
-
-        if resp.status_code == 200:
-            data = resp.json()
-            return ComponentStatus(
-                status="ok",
-                message=f"Ollama {data.get('version', 'unknown')}",
-                latency_ms=latency,
-            )
-        else:
-            return ComponentStatus(
-                status="degraded",
-                message=f"Ollama responded with HTTP {resp.status_code}",
-                latency_ms=latency,
-            )
+        label = f"{provider.provider_name}: {provider.model_name}"
+        if ok:
+            return ComponentStatus(status="ok", message=label, latency_ms=latency)
+        return ComponentStatus(status="unavailable", message=f"{label} not reachable (check endpoint, key, deployment)", latency_ms=latency)
     except Exception as exc:
-        return ComponentStatus(
-            status="unavailable",
-            message=f"Ollama not reachable: {exc}",
-        )
+        return ComponentStatus(status="unavailable", message=f"LLM provider error: {exc}")
+
+
+async def _check_embeddings() -> ComponentStatus:
+    """Check the configured embedding provider with a one-item request."""
+    from app.ai.providers.embedding_registry import get_embedding_provider
+    try:
+        provider = get_embedding_provider()
+        t0 = time.monotonic()
+        ok = await provider.health_check()
+        latency = round((time.monotonic() - t0) * 1000, 1)
+        label = f"{provider.provider_name}: {provider.model_name}"
+        if ok:
+            return ComponentStatus(status="ok", message=label, latency_ms=latency)
+        return ComponentStatus(status="unavailable", message=f"{label} not reachable (check endpoint, key, deployment)", latency_ms=latency)
+    except Exception as exc:
+        return ComponentStatus(status="unavailable", message=f"Embedding provider error: {exc}")

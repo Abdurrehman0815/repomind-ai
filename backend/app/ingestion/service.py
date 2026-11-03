@@ -7,17 +7,16 @@ and database persistence for projects and source file documents.
 from __future__ import annotations
 
 import subprocess
-import sys
 import re
 from urllib.parse import urlparse
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.ingestion.scanner import scan_repository, ScannedFileInfo
+from app.ingestion.scanner import scan_repository
 from app.models.project import Project
 from app.models.file_document import FileDocument
 from app.repositories.project_repository import ProjectRepository
@@ -201,8 +200,15 @@ class IngestionService:
 
         try:
             summary = await self.sync_files(project)
-            # Update status to unindexed (files imported, chunks/symbols pending in Phase 4)
-            await self.project_repo.update_status(project.id, "unindexed")
+            # A repository is not useful to the retrieval and agent layers until
+            # its files have been parsed, chunked, and embedded.  Keep this in
+            # the import workflow so a newly imported project is immediately
+            # ready for codebase chat and analysis.
+            from app.ingestion.symbol_extractor import SymbolExtractor
+
+            extractor = SymbolExtractor(self.session)
+            await extractor.extract_symbols_for_project(project.id)
+            await self.project_repo.update_status(project.id, "indexed")
 
             # Update repository commit hash
             commit_hash = self._get_repository_commit(canonical_path_str)

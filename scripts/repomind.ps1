@@ -15,9 +15,16 @@ switch ($Task) {
     }
   }
   'stop' { docker compose -f "$root\docker-compose.yml" down }
-  'test' { Push-Location "$root\backend"; .\venv\Scripts\python.exe -m pytest; Pop-Location }
+  'test' {
+    Push-Location "$root\backend"; .\venv\Scripts\python.exe -m pytest; Pop-Location
+    Push-Location "$root\mcp-server"; ..\backend\venv\Scripts\python.exe -m pytest; Pop-Location
+  }
   'lint' { Push-Location "$root\frontend"; npm run lint; Pop-Location }
   'format' { Push-Location "$root\backend"; .\venv\Scripts\python.exe -m ruff format app tests; Pop-Location }
   'index' { Write-Host 'Use the Projects page or POST /api/v1/projects to register and index a repository.' }
-  'evaluate' { Push-Location "$root\backend"; .\venv\Scripts\python.exe ..\scripts\performance_report.py; Pop-Location }
+  'evaluate' {
+    # Grounding evals need the stack running (start) and a configured AI provider.
+    Push-Location $root; .\backend\venv\Scripts\python.exe -m evals.run; Pop-Location
+    Push-Location "$root\backend"; .\venv\Scripts\python.exe ..\scripts\performance_report.py; Pop-Location
+  }
 }

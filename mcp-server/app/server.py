@@ -15,7 +15,7 @@ Exposes controlled repository intelligence and developer execution tools:
 
 All tools call the internal backend service and repository layers without duplicating business logic.
 """
-from __future__ import annotations
+# No `from __future__ import annotations`: FastMCP inspects tool type hints at runtime.
 
 import json
 import os

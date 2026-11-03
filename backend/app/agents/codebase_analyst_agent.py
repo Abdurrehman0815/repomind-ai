@@ -11,21 +11,21 @@ Implements a specialized agent for deep codebase analysis including:
 
 from __future__ import annotations
 
-from typing import Any, List, Dict, Tuple, Optional
-from uuid import UUID
+from typing import Any, List, Dict, Tuple
+import re
+
 import structlog
 
 from app.ai.providers.registry import get_llm_provider
 from app.ai.providers.base import GenerateOptions
-from app.models.chat import ChatSession, ChatMessage
-from app.models.project import Project
+from app.core.config import get_settings
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.chunk_repository import ChunkRepository
 from app.repositories.symbol_repository import SymbolRepository
 from app.repositories.dependency_repository import DependencyRepository
 from app.services.citation_service import CitationService
-from app.services.retrieval_service import RetrievalService
+from app.services.retrieval_service import RetrievalService, clip_for_prompt, file_label
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
@@ -317,8 +317,8 @@ class CodebaseAnalystAgent:
                         "name": symbol.name,
                         "kind": symbol.kind,
                         "file_id": str(symbol.file_id) if symbol.file_id else None,
-                        "line_start": symbol.start_line,
-                        "line_end": symbol.end_line,
+                        "line_start": symbol.line_start,
+                        "line_end": symbol.line_end,
                         "docstring": getattr(symbol, 'docstring', None)
                     })
 
@@ -344,6 +344,62 @@ class CodebaseAnalystAgent:
                 "symbol_relationships": [],
                 "total_symbols_analyzed": 0
             }
+
+    async def _extract_relevant_symbols(
+        self,
+        project_id: str,
+        query: str,
+        context_chunks: List[Any]
+    ) -> List[Any]:
+        """Rank symbols in the retrieved files by how well they match the query."""
+        query_terms = {term for term in re.findall(r"[a-z0-9_]+", query.lower()) if len(term) > 2}
+        chunk_ranges: Dict[str, List[Tuple[int, int]]] = {}
+        for chunk in context_chunks:
+            chunk_ranges.setdefault(str(chunk.file_id), []).append((chunk.start_line, chunk.end_line))
+
+        scored: List[Tuple[int, Any]] = []
+        for file_id, ranges in chunk_ranges.items():
+            try:
+                symbols = await self.symbol_repo.list_by_file(file_id)
+            except Exception as exc:
+                logger.warning("symbol_lookup_failed", file_id=file_id, error=str(exc))
+                continue
+            for symbol in symbols:
+                name_terms = set(re.findall(r"[a-z0-9]+", symbol.name.lower()))
+                score = 3 * len(query_terms & name_terms) + (3 if symbol.name.lower() in query_terms else 0)
+                if any(start <= symbol.line_end and symbol.line_start <= end for start, end in ranges):
+                    score += 1  # inside retrieved evidence
+                if score:
+                    scored.append((score, symbol))
+
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return [symbol for _, symbol in scored[:15]]
+
+    async def _generate_precise_locations(
+        self,
+        symbols: List[Any],
+        context_chunks: List[Any]
+    ) -> List[Dict[str, Any]]:
+        """Turn symbols (or, failing that, chunks) into exact path/line locations."""
+        if symbols:
+            return [
+                {
+                    "file_path": file_label(symbol.file_id),
+                    "start_line": symbol.line_start,
+                    "end_line": symbol.line_end,
+                    "description": f"{symbol.kind} {symbol.name}" + (f" — {symbol.signature}" if symbol.signature else ""),
+                }
+                for symbol in symbols
+            ]
+        return [
+            {
+                "file_path": file_label(chunk.file_id),
+                "start_line": chunk.start_line,
+                "end_line": chunk.end_line,
+                "description": "retrieved code section",
+            }
+            for chunk in context_chunks[:10]
+        ]
 
     async def _analyze_dependencies(
         self,
@@ -433,18 +489,16 @@ KEY SYMBOLS IDENTIFIED:
 DEPENDENCY RELATIONSHIPS:
 {deps_text}
 
-Please provide a clear architecture explanation that addresses the user's question. Focus on:
-- How components interact and depend on each other
-- Data flow and control flow patterns
-- Architectural patterns evident in the code
-- Specific file and component references with line numbers
-- If evidence is insufficient, state what could not be determined from the available code"""
+Answer the user's question directly and concisely (under 300 words). Cover only the parts of
+architecture, data flow or dependencies that the question actually asks about, and skip any
+section the evidence does not support. Cite files with line numbers. If the evidence is
+insufficient, say exactly what could not be determined."""
 
             # Get LLM provider and generate explanation
             provider = get_llm_provider()
             options = GenerateOptions(
                 temperature=0.2,
-                max_tokens=2048,
+                max_tokens=get_settings().answer_max_tokens,
                 system_prompt=system_prompt
             )
 
@@ -515,7 +569,7 @@ Please provide clear guidance on where to find the requested code elements. Incl
             provider = get_llm_provider()
             options = GenerateOptions(
                 temperature=0.1,
-                max_tokens=1024,
+                max_tokens=min(get_settings().answer_max_tokens, 500),
                 system_prompt=system_prompt
             )
 
@@ -546,15 +600,16 @@ Please provide clear guidance on where to find the requested code elements. Incl
             return "No relevant code context found."
 
         formatted_chunks = []
-        for i, (chunk, score) in enumerate(context[:10]):  # Top 10 chunks
-            content = getattr(chunk, 'content', str(chunk))
+        settings = get_settings()
+        for i, (chunk, score) in enumerate(context[:settings.prompt_context_chunks]):
+            content = clip_for_prompt(getattr(chunk, 'content', chunk))
             file_id = getattr(chunk, 'file_id', 'unknown')
             start_line = getattr(chunk, 'start_line', '?')
             end_line = getattr(chunk, 'end_line', '?')
             symbol = getattr(chunk, 'symbol', 'unknown')
 
             formatted_chunks.append(
-                f"[File {file_id}:L{start_line}-L{end_line}] Symbol: {symbol} (Relevance: {score:.2f})\n{content}\n"
+                f"[{file_label(file_id)}:L{start_line}-L{end_line}] Symbol: {symbol} (Relevance: {score:.2f})\n{content}\n"
             )
 
         return "\n---\n".join(formatted_chunks)
@@ -572,7 +627,7 @@ Please provide clear guidance on where to find the requested code elements. Incl
             end_line = getattr(chunk, 'end_line', '?')
 
             formatted_chunks.append(
-                f"[File {file_id}:L{start_line}-L{end_line}]\n{content}\n"
+                f"[{file_label(file_id)}:L{start_line}-L{end_line}]\n{content}\n"
             )
 
         return "\n---\n".join(formatted_chunks)
@@ -586,7 +641,7 @@ Please provide clear guidance on where to find the requested code elements. Incl
         formatted = []
         for symbol in key_symbols[:10]:  # Top 10 symbols
             formatted.append(
-                f"- {symbol['name']} ({symbol['kind']}) in File {symbol['file_id']}:L{symbol['line_start']}-L{symbol['line_end']}"
+                f"- {symbol['name']} ({symbol['kind']}) in {file_label(symbol['file_id'])}:L{symbol['line_start']}-L{symbol['line_end']}"
                 f"{(': ' + symbol['docstring'][:100] + '...') if symbol.get('docstring') else ''}"
             )
 
@@ -601,7 +656,7 @@ Please provide clear guidance on where to find the requested code elements. Incl
         formatted = []
         for rel in relationships[:10]:  # Top 10 relationships
             formatted.append(
-                f"- File {rel['source_file']} → File {rel['target_file']} ({rel['dependency_type']})"
+                f"- {file_label(rel['source_file'])} → {file_label(rel['target_file'])} ({rel['dependency_type']})"
                 f"{' [external]' if rel.get('is_external') else ''}"
             )
 
@@ -615,7 +670,7 @@ Please provide clear guidance on where to find the requested code elements. Incl
         formatted = []
         for i, location in enumerate(locations[:10]):  # Top 10 locations
             location_str = (
-                f"{i+1}. File {location.get('file_path', 'unknown')}:L{location.get('start_line', '?')}-L{location.get('end_line', '?')}"
+                f"{i+1}. {location.get('file_path', 'unknown')}:L{location.get('start_line', '?')}-L{location.get('end_line', '?')}"
             )
             if location.get('description'):
                 location_str += ' - ' + location.get('description', '')

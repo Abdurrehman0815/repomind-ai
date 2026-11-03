@@ -55,9 +55,9 @@ graph TB
     end
 
     subgraph AIProviders["AI Providers"]
-        OL[Ollama Local]
-        BR[Bedrock - Phase 32+]
-        EM[Embedding Provider]
+        AZ[Azure AI Foundry - gpt-4.1-mini]
+        AZE[Azure AI Foundry - text-embedding-3-small]
+        OL[Ollama Local - offline fallback]
     end
 
     Frontend --> API
@@ -248,11 +248,13 @@ LLMProvider (abstract)
     ├── structured_generate(prompt, schema, options) → BaseModel
     └── tool_calling(prompt, tools, options) → ToolCallResult
 
-LocalOllamaProvider (Phase 1–30)
-BedrockProvider (Phase 32+)
+AzureFoundryProvider  (default: Azure AI Foundry, OpenAI or Anthropic wire format)
+LocalOllamaProvider   (offline fallback)
+
+EmbeddingProvider: AzureEmbeddingProvider | OllamaEmbeddingProvider | LocalEmbeddingProvider
 ```
 
-The application code always calls `get_llm_provider()` — never Ollama or Bedrock directly.
+The application code always calls `get_llm_provider()` — never Azure or Ollama directly.
 
 ---
 
@@ -281,4 +283,4 @@ LLM calls track:
 - model provider + model name
 - input/output tokens (when available)
 - latency_ms
-- estimated cost (zero for local, real for Bedrock)
+- estimated cost (zero for local, real for Azure)

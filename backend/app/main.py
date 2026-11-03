@@ -12,7 +12,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
-from app.db.session import engine, check_database_connection
+from app.db.session import check_database_connection
 
 logger = structlog.get_logger(__name__)
 

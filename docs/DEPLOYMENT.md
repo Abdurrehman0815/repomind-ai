@@ -36,19 +36,18 @@ All configuration is via environment variables. See `.env.example` for the full 
 
 | Variable | Default | Description |
 |---|---|---|
-| `LLM_PROVIDER` | `ollama` | `ollama` or `bedrock` |
+| `LLM_PROVIDER` | `ollama` | `azure_foundry` (recommended) or `ollama` |
+| `LLM_ENDPOINT` | — | Foundry endpoint, `https://<resource>.services.ai.azure.com` |
+| `LLM_API_KEY` | — | Foundry key (KEY 1); `.env` only, never committed |
+| `LLM_MODEL` | — | Chat deployment name, e.g. `gpt-4.1-mini` |
+| `LLM_API_STYLE` | `anthropic` | `openai` for GPT deployments, `anthropic` for Claude |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
 | `OLLAMA_MODEL` | `llama3.2` | Ollama model to use |
-| `EMBEDDING_PROVIDER` | `local` | Embedding provider |
-| `EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model name |
-| `EMBEDDING_DIMENSIONS` | `768` | Vector dimensions |
-
-### AWS Bedrock (Phase 32+ only)
-
-| Variable | Default | Description |
-|---|---|---|
-| `AWS_REGION` | — | AWS region |
-| `BEDROCK_MODEL_ID` | — | Bedrock model ID |
+| `EMBEDDING_PROVIDER` | `local` | `azure_foundry`, `ollama` or `local` |
+| `EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model / deployment, e.g. `text-embedding-3-small` |
+| `EMBEDDING_DIMENSIONS` | `768` | Vector dimensions (must match the database schema) |
+| `EMBEDDING_ENDPOINT` | — | Azure OpenAI endpoint, `https://<resource>.openai.azure.com` |
+| `RETRIEVAL_MIN_SIMILARITY` | `0.5` | Vector-search cutoff; use `0.2` for Azure embeddings |
 
 ### Security
 
@@ -64,10 +63,9 @@ All configuration is via environment variables. See `.env.example` for the full 
 
 ```yaml
 services:
-  postgres:    # PostgreSQL 15 + pgvector
-  backend:     # FastAPI application
-  frontend:    # React/Vite application
-  ollama:      # Ollama inference server (optional)
+  postgres:    # PostgreSQL 16 + pgvector (host port 5434)
+  backend:     # FastAPI application (port 8000)
+  frontend:    # React build served by Nginx (port 3000)
 ```
 
 ---
@@ -82,16 +80,14 @@ For production deployments, consider:
 4. **TLS** — terminate at reverse proxy
 5. **Secrets** — environment variables from a secrets manager
 
-### Optional AWS Production Stack (Phase 36+)
+### Optional Azure Production Stack
 
-Only implement if AWS production deployment is required:
+Only implement if cloud hosting is required (the AI models already run on Azure AI Foundry):
 
-- **ECS/Fargate** — container compute
-- **RDS PostgreSQL** — managed database with pgvector
-- **S3** — repository storage
-- **CloudWatch** — logging and metrics
-- **Secrets Manager** — credential management
-- **IAM** — role-based access control
+- **Azure Container Apps** — run the backend and frontend containers
+- **Azure Database for PostgreSQL** — managed database with the pgvector extension
+- **Azure Key Vault** — store `LLM_API_KEY` instead of a `.env` file
+- **Azure Monitor / Application Insights** — logs and metrics
 
 Do not add these unless specifically required. The local Docker Compose
 setup is the primary deployment target.

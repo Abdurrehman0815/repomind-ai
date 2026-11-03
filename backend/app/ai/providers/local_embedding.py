@@ -11,7 +11,14 @@ import logging
 from typing import List, Optional
 import numpy as np
 
-from app.ai.providers.embedding_base import EmbeddingProvider, EmbeddingOptions, EmbeddingResponse, EmbeddingProviderError
+from app.ai.providers.embedding_base import (
+    EmbeddingProvider,
+    EmbeddingOptions,
+    EmbeddingResponse,
+    EmbeddingProviderError,
+    EmbeddingProviderUnavailableError,
+    EmbeddingProviderInvalidInputError,
+)
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -85,7 +92,7 @@ class LocalEmbeddingProvider(EmbeddingProvider):
     async def _load_model(self) -> None:
         """Load the sentence-transformers model."""
         try:
-            logger.info("Loading local embedding model", model=self._model_name)
+            logger.info(f"Loading local embedding model: {self._model_name}")
 
             # Import sentence-transformers here to avoid blocking if not installed
             try:

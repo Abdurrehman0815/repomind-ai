@@ -43,7 +43,12 @@ class FastMCPToolGateway:
                 raise RuntimeError("RepoMind MCP server could not be loaded")
             module = importlib.util.module_from_spec(spec)
             sys.modules[cls._MODULE_NAME] = module
-            spec.loader.exec_module(module)
+            try:
+                spec.loader.exec_module(module)
+            except BaseException:
+                # Don't cache a half-initialised module; the next call retries cleanly.
+                sys.modules.pop(cls._MODULE_NAME, None)
+                raise
         return module.create_mcp_server()
 
     async def call(self, tool_name: str, arguments: dict[str, Any]) -> Any:

@@ -10,7 +10,6 @@ from __future__ import annotations
 import ast
 import re
 import structlog
-from typing import Any
 
 from app.ingestion.parsers.base import (
     BaseCodeParser,

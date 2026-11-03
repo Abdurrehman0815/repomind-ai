@@ -19,6 +19,16 @@ export interface Project {
   status: 'unindexed' | 'indexing' | 'indexed' | 'error'
   file_count: number
   total_size_bytes: number
+  metadata?: {
+    indexing?: {
+      phase: 'cloning' | 'scanning' | 'embedding' | 'done'
+      files_done?: number
+      files_total?: number
+      started_at?: number
+      updated_at?: number
+      duration_s?: number
+    }
+  }
   created_at: string
   updated_at: string
 }

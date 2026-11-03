@@ -235,24 +235,26 @@ class TestProjectsAPI:
             proj_data = post_resp.json()
             proj_id = proj_data["id"]
             assert proj_data["name"] == "API Test Project"
-            assert proj_data["file_count"] == 1
+            # Scanning and embedding run as a background job after the response.
+            assert proj_data["status"] == "indexing"
 
             # 2. Get project details
             get_resp = await client.get(f"/api/v1/projects/{proj_id}")
             assert get_resp.status_code == 200
             assert get_resp.json()["id"] == proj_id
 
-            # 3. List project files
+            # 3. Trigger scan, then a re-scan sees the file as unchanged
+            scan_resp = await client.post(f"/api/v1/projects/{proj_id}/scan")
+            assert scan_resp.status_code == 200
+            rescan_resp = await client.post(f"/api/v1/projects/{proj_id}/scan")
+            assert rescan_resp.json()["summary"]["unchanged_files"] == 1
+
+            # 4. List project files
             files_resp = await client.get(f"/api/v1/projects/{proj_id}/files")
             assert files_resp.status_code == 200
             files_data = files_resp.json()
             assert files_data["total"] == 1
             assert files_data["files"][0]["relative_path"] == "index.ts"
-
-            # 4. Trigger scan
-            scan_resp = await client.post(f"/api/v1/projects/{proj_id}/scan")
-            assert scan_resp.status_code == 200
-            assert scan_resp.json()["summary"]["unchanged_files"] == 1
 
             # 5. Delete project
             del_resp = await client.delete(f"/api/v1/projects/{proj_id}")

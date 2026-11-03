@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import math
 import urllib.request
@@ -28,6 +29,10 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
         self._dimensions = dimensions
         self._base_url = self.settings.ollama_base_url.rstrip("/")
         self._timeout = self.settings.ollama_timeout
+        # Embeddings are deterministic, so identical chunk text (duplicates,
+        # unchanged re-index, repeated queries) never needs a second model call.
+        self._cache: dict[str, list[float]] = {}
+        self._cache_limit = 20000
 
     @property
     def provider_name(self) -> str:
@@ -45,6 +50,7 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
         payload = json.dumps({
             "model": self._model_name,
             "input": texts,
+            "keep_alive": self.settings.ollama_keep_alive,
         }).encode("utf-8")
 
         request = urllib.request.Request(
@@ -113,11 +119,22 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
         if batch_size < 1:
             raise EmbeddingProviderError("batch_size must be positive")
 
-        all_embeddings = []
+        keys = [
+            f"{int(options.normalize)}:" + hashlib.sha1(item.encode("utf-8")).hexdigest()
+            for item in non_empty
+        ]
+        missing: dict[str, str] = {}
+        for key, item in zip(keys, non_empty):
+            if key not in self._cache:
+                missing.setdefault(key, item)
 
-        for start in range(0, len(non_empty), batch_size):
-            batch = non_empty[start:start + batch_size]
-            vectors = await asyncio.to_thread(self._embed_batch, batch)
+        fresh: dict[str, list[float]] = {}
+        missing_keys = list(missing)
+        for start in range(0, len(missing_keys), batch_size):
+            batch_keys = missing_keys[start:start + batch_size]
+            vectors = await asyncio.to_thread(
+                self._embed_batch, [missing[key] for key in batch_keys]
+            )
 
             if options.normalize:
                 normalized_vectors = []
@@ -129,7 +146,12 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
                     )
                 vectors = normalized_vectors
 
-            all_embeddings.extend(vectors)
+            fresh.update(zip(batch_keys, vectors))
+
+        all_embeddings = [fresh[key] if key in fresh else self._cache[key] for key in keys]
+        if len(self._cache) + len(fresh) > self._cache_limit:
+            self._cache.clear()
+        self._cache.update(fresh)
 
         return EmbeddingResponse(
             embeddings=all_embeddings,

@@ -8,15 +8,16 @@ Also handles code chunking for vector search preparation and dependency extracti
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 import structlog
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ingestion.parsers import parse_file_content
 from app.ingestion.chunker import Chunker
+from app.ingestion.text_io import read_source_text
 from app.models.file_document import FileDocument
 from app.models.code_symbol import CodeSymbol
-from app.models.dependency import Dependency
 from app.repositories.chunk_repository import ChunkRepository
 from app.repositories.dependency_repository import DependencyRepository
 from app.repositories.file_repository import FileRepository
@@ -57,14 +58,41 @@ class SymbolExtractor:
         self.chunker = Chunker()
 
     async def extract_symbols_for_project(
-        self, project_id: str
+        self,
+        project_id: str,
+        on_progress: Callable[[int, int], Awaitable[None]] | None = None,
+        only_pending: bool = False,
     ) -> SymbolExtractionStats:
-        """Parse all pending/unparsed files in a project."""
+        """Parse a project's files.
+
+        With ``only_pending`` files already parsed with an unchanged hash are
+        skipped (the scanner resets ``ast_status`` to ``pending`` when content
+        changes), so re-indexing an unchanged repository costs almost nothing.
+        The default re-parses everything, which explicit re-parse requests need.
+        """
         stats = SymbolExtractionStats(project_id)
-        files = await self.file_repo.list_by_project(project_id)
+        all_files = await self.file_repo.list_by_project(project_id)
+        files = [doc for doc in all_files if not only_pending or doc.ast_status != "parsed"]
+        total = len(files)
+        if on_progress:
+            await on_progress(0, total)
 
         for doc in files:
-            symbols = await self.extract_symbols_for_file(doc)
+            # A rollback for an earlier file expires every row in the session;
+            # reload explicitly, since an implicit lazy load fails under asyncio.
+            if sa_inspect(doc).expired:
+                await self.session.refresh(doc)
+            doc_path = doc.path
+            try:
+                symbols = await self.extract_symbols_for_file(doc)
+                await self.session.commit()
+            except Exception as exc:
+                await self.session.rollback()
+                logger.error("failed_to_extract_symbols_for_file", file=doc_path, error=str(exc), exc_info=True)
+                await self.session.refresh(doc)
+                doc.ast_status = "error"
+                await self.session.commit()
+                symbols = []
             stats.files_processed += 1
             stats.total_symbols += len(symbols)
             for s in symbols:
@@ -73,8 +101,9 @@ class SymbolExtractor:
                 )
             if doc.ast_status in {"error", "partial"}:
                 stats.files_with_errors += 1
+            if on_progress:
+                await on_progress(stats.files_processed, total)
 
-        await self.session.flush()
         return stats
 
     async def extract_symbols_for_file(
@@ -90,7 +119,7 @@ class SymbolExtractor:
 
         # Read file contents safely
         try:
-            content = file_path.read_text(encoding="utf-8", errors="replace")
+            content = read_source_text(file_path)
         except Exception as exc:
             logger.warning("failed_to_read_source_file", path=doc.path, error=str(exc))
             doc.ast_status = "error"
@@ -102,6 +131,7 @@ class SymbolExtractor:
         # Clear existing symbols and chunks for this file to ensure idempotency
         await self.symbol_repo.delete_by_file(doc.id)
         await self.chunk_repo.delete_by_file(doc.id)
+        await self.dep_repo.delete_by_file(doc.id)
 
         # First pass: Create parent symbols (classes, interfaces)
         created_symbols: list[CodeSymbol] = []

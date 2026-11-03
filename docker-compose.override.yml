@@ -1,8 +1,8 @@
 services:
   backend:
-    # Configure Ollama for embedding generation.
+    # Embedding/LLM providers come from .env (Azure AI Foundry). Ollama is only
+    # reachable here if you switch EMBEDDING_PROVIDER/LLM_PROVIDER back to ollama.
     environment:
-      EMBEDDING_PROVIDER: ollama
       OLLAMA_BASE_URL: http://host.docker.internal:11434
 
     # Mount local backend code for development and hot reload.

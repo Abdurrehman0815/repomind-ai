@@ -4,9 +4,8 @@ RepoMind AI — Chat Repository
 Data access layer for ChatSession and ChatMessage entities.
 """
 from typing import Sequence, Optional
-from uuid import UUID
 import structlog
-from sqlalchemy import select, update, delete, func
+from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chat import ChatSession, ChatMessage, EvaluationFeedback

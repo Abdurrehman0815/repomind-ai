@@ -4,10 +4,9 @@ RepoMind AI — Ollama LLM Provider
 Full implementation for Phase 9.
 Implements the LLM provider interface for Ollama local inference.
 """
-import asyncio
 import json
 import time
-from typing import Any, AsyncIterator, Type, TypeVar
+from typing import AsyncIterator, Type, TypeVar
 
 import httpx
 import structlog
@@ -15,6 +14,7 @@ import structlog
 from app.ai.providers.base import (
     GenerateOptions,
     LLMProvider,
+    LLMProviderError,
     LLMProviderUnavailableError,
     LLMResponse,
     LLMStructuredOutputError,
@@ -42,7 +42,11 @@ class LocalOllamaProvider(LLMProvider):
         model: str = "llama3.2",
         timeout: int = 120,
         max_tokens: int = 4096,
+        keep_alive: str = "30m",
+        num_ctx: int = 6144,
     ) -> None:
+        self._keep_alive = keep_alive
+        self._num_ctx = num_ctx
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._timeout = timeout
@@ -113,9 +117,11 @@ class LocalOllamaProvider(LLMProvider):
                     "model": self._model,
                     "prompt": prompt,
                     "stream": False,
+                    "keep_alive": self._keep_alive,
                     "options": {
                         "temperature": options.temperature,
                         "num_predict": options.max_tokens,
+                        "num_ctx": self._num_ctx,
                     }
                 }
 
@@ -184,9 +190,11 @@ class LocalOllamaProvider(LLMProvider):
                     "model": self._model,
                     "prompt": prompt,
                     "stream": True,
+                    "keep_alive": self._keep_alive,
                     "options": {
                         "temperature": options.temperature,
                         "num_predict": options.max_tokens,
+                        "num_ctx": self._num_ctx,
                     }
                 }
 
@@ -281,6 +289,7 @@ class LocalOllamaProvider(LLMProvider):
                     "options": {
                         "temperature": options.temperature,
                         "num_predict": options.max_tokens,
+                        "num_ctx": self._num_ctx,
                     }
                 }
 
@@ -375,6 +384,7 @@ class LocalOllamaProvider(LLMProvider):
                     "options": {
                         "temperature": options.temperature,
                         "num_predict": options.max_tokens,
+                        "num_ctx": self._num_ctx,
                     }
                 }
 
@@ -407,7 +417,6 @@ class LocalOllamaProvider(LLMProvider):
                 # Ollama may return tool calls in various formats
                 try:
                     # Look for JSON-like tool call patterns in the response
-                    import re
                     # Simple pattern detection for tool calls
                     # This is a simplified implementation - in practice,
                     # Ollama's tool calling support varies by model

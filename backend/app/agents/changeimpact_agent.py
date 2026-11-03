@@ -6,21 +6,18 @@ Implements a specialized agent for analyzing the impact of changes on the codeba
 
 from __future__ import annotations
 
-from typing import Any, List, Dict, Tuple, Optional
-from uuid import UUID
+from typing import Any, List, Dict, Tuple
 import structlog
 
 from app.ai.providers.registry import get_llm_provider
 from app.ai.providers.base import GenerateOptions
-from app.models.chat import ChatSession, ChatMessage
-from app.models.project import Project
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.chunk_repository import ChunkRepository
 from app.repositories.symbol_repository import SymbolRepository
 from app.repositories.dependency_repository import DependencyRepository
 from app.services.citation_service import CitationService
-from app.services.retrieval_service import RetrievalService
+from app.services.retrieval_service import RetrievalService, file_label
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
@@ -418,7 +415,7 @@ Use only relevant evidence. Keep the response under 250 words."""
             symbol = getattr(chunk, 'symbol', 'unknown')
 
             formatted_chunks.append(
-                f"[File {file_id}:L{start_line}-L{end_line}] Symbol: {symbol} (Relevance: {score:.2f})\n{content}\n"
+                f"[{file_label(file_id)}:L{start_line}-L{end_line}] Symbol: {symbol} (Relevance: {score:.2f})\n{content}\n"
             )
 
         return "\n---\n".join(formatted_chunks)
@@ -468,7 +465,7 @@ Use only relevant evidence. Keep the response under 250 words."""
         formatted = []
         for file_info in affected_files[:5]:  # Top 10 affected files
             formatted.append(
-                f"- File {file_info['file_id']}: {file_info['reason']}"
+                f"- {file_label(file_info['file_id'])}: {file_info['reason']}"
                 f" ({file_info['symbols_count']} related symbols)"
             )
 

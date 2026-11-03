@@ -112,4 +112,22 @@
   .step-animate {
     animation: step-slide-in 0.2s ease-out;
   }
+
+  /* Indeterminate Progress Bar Animation */
+  @keyframes indeterminate-progress {
+    0% {
+      transform: translateX(-100%) scaleX(0.2);
+    }
+    50% {
+      transform: translateX(30%) scaleX(0.6);
+    }
+    100% {
+      transform: translateX(120%) scaleX(0.2);
+    }
+  }
+
+  .animate-indeterminate-bar {
+    animation: indeterminate-progress 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    transform-origin: left;
+  }
 }
