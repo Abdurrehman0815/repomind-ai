@@ -47,22 +47,7 @@ Every answer comes **only from retrieved code**. If the evidence isn't there, Re
 - **Measured quality:** `python -m evals.run` scores citation recall and term recall on a sample repository.
 
 ---
-
-## Architecture
-
-```mermaid
-flowchart LR
-    UI["React + Vite UI<br/>(Nginx :3000)"] -->|REST| API["FastAPI backend<br/>:8000"]
-    API --> ING["Ingestion<br/>scan → parse → chunk"]
-    API --> SUP["LangGraph supervisor"]
-    SUP --> AG["Specialist agents"]
-    AG --> RET["Hybrid retrieval<br/>vector + keyword + RRF"]
-    AG --> MCP["MCP tools<br/>(repo / git / tests)"]
-    ING --> EMB["Embeddings<br/>Azure text-embedding-3-small"]
-    AG --> LLM["LLM<br/>Azure gpt-4.1-mini"]
-    ING --> DB[("PostgreSQL 16<br/>+ pgvector")]
-    RET --> DB
-```
+## Flow Route
 
 **Flow:** import → scan and hash files → parse symbols and imports → chunk → embed → store. Then for each question: classify intent → retrieve evidence → specialist agent → LLM answer → validated citations.
 
