@@ -83,7 +83,8 @@ docker-volumes/
 # AI / ML model caches
 # ─────────────────────────────────────────────────────────────
 .ollama/
-models/
+# Only downloaded model weights; backend/app/models is the app's own source package
+/models/
 *.gguf
 *.bin
 *.safetensors
@@ -135,3 +136,7 @@ evals/reports/*.html
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Build artifacts and scratch files
+*.tsbuildinfo
+frontend-build.log
